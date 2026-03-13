@@ -1,0 +1,245 @@
+NoEnv
+#SingleInstance 
+CoordMode, Mouse, Screen
+SendMode Input
+
+; ============================================================
+; SCRIPT FARM LEVIATHAN - BLOX FRUIT
+; Hotkey: F6 để BẮT ĐẦU | F7 để DỪNG LẠI | F8 để THOÁT
+; ============================================================
+
+; Biến toàn cục
+global farming := false
+global comboStep := 0
+global comboDelays := [50, 100, 50, 100, 50, 100, 50, 2000] ; Thời gian delay giữa các bước (ms)
+
+; ============================================================
+; CẤU HÌNH PHÍM TẮT (ĐIỀU CHỈNH THEO KEYBIND CỦA MÀY)
+; ============================================================
+; Phím chiêu thức
+global skill_Z := "z"
+global skill_X := "x"
+global skill_C := "c"
+global skill_V := "v"
+global skill_F := "f"  ; Phím bay/né
+global skill_G := "g"  ; Skill đặc biệt
+
+; Phím di chuyển
+global move_forward := "w"
+global move_backward := "s"
+global move_left := "a"
+global move_right := "d"
+global jump_key := "Space"
+
+; ============================================================
+; KHỞI TẠO INTERFACE
+; ============================================================
+Menu, Tray, Icon, shell32.dll, 44
+Menu, Tray, Tip, Leviathan Farmer Script
+
+; Tạo GUI đơn giản
+Gui, +AlwaysOnTop +ToolWindow
+Gui, Color, 2E2E2E
+Gui, Font, s10 cWhite, Segoe UI
+Gui, Add, Text, x10 y10 w200 Center vStatusText, Trạng thái: DỪNG
+Gui, Add, Progress, x10 y35 w200 h20 cGreen vProgressBar, 0
+Gui, Font, s8 cGray
+Gui, Add, Text, x10 y60 w200 Center, F6: Bắt đầu | F7: Dừng | F8: Thoát
+Gui, Show, xCenter yCenter w220 h90, Leviathan Farmer
+return
+
+; ============================================================
+; HOTKEYS CHÍNH
+; ============================================================
+F6::
+    farming := true
+    GuiControl,, StatusText, Trạng thái: ĐANG FARM - F7 để dừng
+    GuiControl,, ProgressBar, 50
+    SetTimer, FarmLoop, 50  ; Chạy loop mỗi 50ms
+    ToolTip, Bắt đầu farm Leviathan..., 0, 0
+    SetTimer, RemoveToolTip, -2000
+return
+
+F7::
+    StopFarming()
+    ToolTip, Đã dừng farm..., 0, 0
+    SetTimer, RemoveToolTip, -2000
+return
+
+F8::
+    StopFarming()
+    GuiClose:
+    ExitApp
+return
+
+RemoveToolTip:
+    ToolTip
+return
+
+; ============================================================
+; HÀM DỪNG FARM
+; ============================================================
+StopFarming() {
+    global farming
+    farming := false
+    GuiControl,, StatusText, Trạng thái: DỪNG
+    GuiControl,, ProgressBar, 0
+    SetTimer, FarmLoop, Off
+}
+
+; ============================================================
+; VÒNG LẶP FARM CHÍNH
+; ============================================================
+FarmLoop:
+    if (!farming)
+        return
+    
+    ; Random thời gian delay để tránh bị anti-cheat (quan trọng mẹ nó đấy)
+    Random, randDelay, 30, 70
+    
+    ; === PHẦN 1: DI CHUYỂN TIẾP CẬN ===
+    ; Nhấn W để tiến lên, nhảy lên, bay tới
+    Send, {%move_forward% down}
+    Sleep, %randDelay%
+    Send, {%jump_key% down}
+    Sleep, 200
+    Send, {%jump_key% up}
+    Send, {%skill_F% down}
+    Sleep, 500
+    Send, {%skill_F% up}
+    
+    ; === PHẦN 2: COMBO TẤN CÔNG CHÍNH ===
+    ; Dùng combo xoay vòng: Z -> X -> C -> V -> G
+    ; Đây là lúc dồn sát thương chết mẹ nó
+    
+    ; Combo Z
+    Send, {%skill_Z% down}
+    Sleep, % randDelay + 20
+    Send, {%skill_Z% up}
+    Sleep, % comboDelays[1]
+    
+    ; Combo X
+    Send, {%skill_X% down}
+    Sleep, % randDelay + 30
+    Send, {%skill_X% up}
+    Sleep, % comboDelays[2]
+    
+    ; Combo C
+    Send, {%skill_C% down}
+    Sleep, % randDelay + 40
+    Send, {%skill_C% up}
+    Sleep, % comboDelays[3]
+    
+    ; Combo V
+    Send, {%skill_V% down}
+    Sleep, % randDelay + 50
+    Send, {%skill_V% up}
+    Sleep, % comboDelays[4]
+    
+    ; === PHẦN 3: NÉ TRÁNH ===
+    ; Di chuyển sang trái/phải để né đòn
+    Send, {%move_left% down}
+    Sleep, 150
+    Send, {%move_left% up}
+    Send, {%jump_key% down}
+    Sleep, 100
+    Send, {%jump_key% up}
+    Send, {%move_right% down}
+    Sleep, 150
+    Send, {%move_right% up}
+    
+    ; === PHẦN 4: COMBO TIẾP THEO ===
+    ; Lặp lại combo nếu cần
+    Send, {%skill_Z% down}
+    Sleep, % randDelay + 25
+    Send, {%skill_Z% up}
+    Sleep, % comboDelays[5]
+    
+    Send, {%skill_X% down}
+    Sleep, % randDelay + 35
+    Send, {%skill_X% up}
+    Sleep, % comboDelays[6]
+    
+    Send, {%skill_C% down}
+    Sleep, % randDelay + 45
+    Send, {%skill_C% up}
+    Sleep, % comboDelays[7]
+    
+    ; === PHẦN 5: HỒI PHỤC ===
+    ; Dừng lại một chút để hồi năng lượng
+    Sleep, % comboDelays[8]
+    
+    ; Cập nhật progress bar cho vui
+    GuiControl,, ProgressBar, % (comboStep := Mod(comboStep + 5, 100))
+    
+    ; Random nhấn thêm phím hồi máu (phím 1-4)
+    if (Mod(A_TickCount, 15000) < 50) {  ; Khoảng 15 giây random nhấn một lần
+        Random, healKey, 1, 4
+        Send, {%healKey%}
+        Sleep, 100
+    }
+return
+
+; ============================================================
+; PHẦN DÀNH CHO NGƯỜI DÙNG AUTOIT (Script thay thế)
+; Copy phần này nếu mày xài AutoIt thay vì AutoHotkey
+; ============================================================
+/*
+; AutoIt Script tương đương
+#cs
+#include <Misc.au3>
+HotKeySet("{F6}", "StartFarm")
+HotKeySet("{F7}", "StopFarm")
+HotKeySet("{F8}", "Terminate")
+
+Global $farming = False
+
+While 1
+    If $farming Then
+        ; Di chuyển
+        Send("w")
+        Sleep(50)
+        Send("{SPACE}")
+        Sleep(200)
+        
+        ; Combo Z X C V
+        Send("z")
+        Sleep(Random(30, 70))
+        Send("x")
+        Sleep(Random(30, 70))
+        Send("c")
+        Sleep(Random(30, 70))
+        Send("v")
+        Sleep(Random(30, 70))
+        
+        ; Né tránh
+        Send("a")
+        Sleep(150)
+        Send("d")
+        Sleep(150)
+        
+        ; Nghỉ xả hơi
+        Sleep(2000)
+    EndIf
+    Sleep(50)
+WEnd
+
+Func StartFarm()
+    $farming = True
+    ToolTip("FARMING... F7 de dung", 0, 0)
+EndFunc
+
+Func StopFarm()
+    $farming = False
+    ToolTip("DA DUNG", 0, 0)
+    Sleep(2000)
+    ToolTip("")
+EndFunc
+
+Func Terminate()
+    Exit
+EndFunc
+#ce
+*/
+
+; ============================================================
