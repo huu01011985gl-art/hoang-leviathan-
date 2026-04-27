@@ -7,8 +7,8 @@
 -- Kiểm tra và tải Kavo UI (dùng link dự phòng nếu link gốc chết)
 local kavoLoaded = false
 local kavoLinks = {
-    "https://raw.githubusercontent.com/Kavo-hub/Kavo-UI-Library/main/source.lua",
-    "https://raw.githubusercontent.com/7GrandDadPNG/Kavo-UI-Library/main/source.lua"
+    "https://raw.githubusercontent.com/huu01011985gl-art/hoang-leviathan-/refs/heads/main/thuvienui",
+    "https://raw.githubusercontent.com/huu01011985gl-art/hoang-leviathan-/refs/heads/main/thuvienui"
 }
 
 for _, link in pairs(kavoLinks) do
@@ -23,8 +23,8 @@ end
 
 if not kavoLoaded then
     game:GetService("StarterGui"):SetCore("SendNotification", {
-        Title = "HDZ Leviathan Hunter",
-        Text = "by hoang",
+        Title = "thư viện không hoạt động ",
+        Text = "ko dc đổi khác",
         Duration = 5
     })
     return
