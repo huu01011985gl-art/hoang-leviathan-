@@ -1,0 +1,793 @@
+-- ============================================
+-- LEVIATHAN HUNTER V6 - PHẦN 1/5
+-- ============================================
+local gui = Instance.new("ScreenGui")
+gui.Name = "LeviHunterGUI"
+gui.ResetOnSpawn = false
+gui.Parent = game:GetService("CoreGui")
+
+local isHunting = false
+local huntThread = nil
+local menuVisible = true
+local currentMission = "NONE"
+local leviathanInfo = {
+    isActive = false, position = nil, health = 0,
+    heartDropped = false, heartPosition = nil, hasChip = false
+}
+local avoidanceActive = false
+local avoidThread = nil
+local attackMode = "M1"
+
+local settings = {
+    skillKeys = {"Z","X","C","V","F"},
+    teleportDelay = 0.3,
+    hangoutPos = CFrame.new(5000,400,-1500),
+    boatName = nil,
+    fastSpeed = 100,
+    slowSpeed = 30,
+    maxShootAttempts = 10,
+    pullDestination = "Hydra"
+}
+
+local function Notify(title, text, duration)
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = title, Text = text, Duration = duration or 3
+    })
+end
+
+local function checkChipStatus()
+    local player = game.Players.LocalPlayer
+    local bp = player:FindFirstChild("Backpack")
+    local char = player.Character
+    if bp then
+        for _, it in pairs(bp:GetChildren()) do
+            if it.Name and (it.Name:lower():find("chip") or it.Name:lower():find("leviathan")) then
+                leviathanInfo.hasChip = true; return true
+            end
+        end
+    end
+    if char then
+        for _, it in pairs(char:GetChildren()) do
+            if it.Name and (it.Name:lower():find("chip") or it.Name:lower():find("leviathan")) then
+                leviathanInfo.hasChip = true; return true
+            end
+        end
+    end
+    leviathanInfo.hasChip = false; return false
+end
+
+local function buyChip()
+    if checkChipStatus() then Notify("Chip","✅ Đã có chip!",2) return end
+    local player = game.Players.LocalPlayer
+    local npc
+    for _, v in pairs(workspace:GetDescendants()) do
+        if v:IsA("Model") and v.Name and v.Name:lower():find("explorer") then npc = v; break end
+    end
+    if not npc then Notify("Lỗi","Không tìm thấy NPC Explorer!",3) return end
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        local npcPos = npc:FindFirstChild("HumanoidRootPart") or npc:FindFirstChild("Head")
+        if npcPos then hrp.CFrame = npcPos.CFrame * CFrame.new(0,0,5); task.wait(1) end
+    end
+    for _, v in pairs(player.PlayerGui:GetDescendants()) do
+        if v:IsA("TextButton") and v.Visible and v.Text:lower():find("chip") then
+            pcall(function() v:Click() end); break
+        end
+    end
+    task.wait(1)
+    if checkChipStatus() then Notify("Chip","🛒 Đã mua Chip thành công!",2)
+    else Notify("Chip","❌ Mua thất bại, cần 1000$?",3) end
+end
+
+local function updateLeviathanInfo()
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name and obj.Name:lower():find("leviathan") then
+            leviathanInfo.isActive = true
+            leviathanInfo.lastSeen = tick()
+            local hrp = obj:FindFirstChild("HumanoidRootPart")
+            if hrp then leviathanInfo.position = hrp.Position end
+            local hum = obj:FindFirstChild("Humanoid")
+            if hum then leviathanInfo.health = math.floor(hum.Health) end
+            return
+        end
+    end
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name and (obj.Name:lower():find("heart") or obj.Name:lower():find("leviathanheart")) then
+            leviathanInfo.heartDropped = true
+            local hrp = obj:FindFirstChild("HumanoidRootPart")
+            leviathanInfo.heartPosition = hrp and hrp.Position or obj.Position
+            return
+        end
+    end
+    if tick() - (leviathanInfo.lastSeen or 0) > 60 then
+        leviathanInfo.isActive = false; leviathanInfo.health = 0
+    end
+end
+-- ===== KẾT THÚC PHẦN 1/5 =====
+-- ============================================
+-- LEVIATHAN HUNTER V6 - PHẦN 2/5
+-- ============================================
+local function startAvoidance()
+    if avoidThread then return end
+    avoidThread = task.spawn(function()
+        while avoidanceActive do
+            local player = game.Players.LocalPlayer
+            local char = player.Character
+            if char then
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    for _, v in pairs(workspace:GetDescendants()) do
+                        if v:IsA("Part") and v.Name and v.Name:lower():find("lightning") then
+                            if (v.Position - hrp.Position).Magnitude < 50 then
+                                hrp.CFrame = hrp.CFrame + Vector3.new(0,100,0)
+                                Notify("⚠️ Né","Đã bay lên tránh sét",1)
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+            task.wait(1)
+        end
+    end)
+end
+
+local function stopAvoidance()
+    if avoidThread then task.cancel(avoidThread); avoidThread = nil end
+end
+
+local function spawnBoat(boatName)
+    local player = game.Players.LocalPlayer
+    local char = player.Character
+    if not char then return false end
+    local bp = player:FindFirstChild("Backpack")
+    local boat = bp and bp:FindFirstChild(boatName) or char:FindFirstChild(boatName)
+    if not boat then Notify("Lỗi","Chưa có thuyền "..boatName,2) return false end
+    local newBoat = boat:Clone()
+    newBoat.Parent = char
+    task.wait(0.5)
+    pcall(function() newBoat:Activate() end)
+    return true
+end
+
+local function getInBoat()
+    local player = game.Players.LocalPlayer
+    local char = player.Character
+    if not char then return nil end
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("VehicleSeat") and obj.Parent and obj.Parent.Name == settings.boatName then
+            local hrp = obj.Parent:FindFirstChild("HumanoidRootPart")
+            if hrp and (hrp.Position - char.HumanoidRootPart.Position).Magnitude < 20 then
+                pcall(function() obj:Sit(char.Humanoid) end)
+                task.wait(0.5)
+                return obj
+            end
+        end
+    end
+    return nil
+end
+
+local function controlBoat(destination, speed)
+    local player = game.Players.LocalPlayer
+    local char = player.Character
+    if not char then return false end
+    local seat
+    for _, c in pairs(char:GetChildren()) do
+        if c:IsA("VehicleSeat") and c.Occupant == char.Humanoid then seat = c; break end
+    end
+    if not seat then seat = getInBoat(); if not seat then return false end end
+    local boat = seat.Parent
+    local boatHrp = boat:FindFirstChild("HumanoidRootPart")
+    if not boatHrp then return false end
+    local throttle = seat:FindFirstChild("Throttle") or Instance.new("NumberValue")
+    throttle.Name = "Throttle"; throttle.Value = speed; throttle.Parent = seat
+    local steer = seat:FindFirstChild("Steer") or Instance.new("NumberValue")
+    steer.Name = "Steer"; steer.Value = 0; steer.Parent = seat
+    boatHrp.CFrame = CFrame.lookAt(boatHrp.Position, destination)
+    return true
+end
+
+local function shootAtHeart(pos)
+    local player = game.Players.LocalPlayer
+    local char = player.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if hrp then hrp.CFrame = CFrame.lookAt(hrp.Position, pos) end
+    pcall(function()
+        local vu = game:GetService("VirtualUser")
+        vu:Button1Down(Vector2.new(0,0)); task.wait(0.05); vu:Button1Up(Vector2.new(0,0))
+    end)
+end
+
+local function adjustBoatAim(heartPos)
+    local player = game.Players.LocalPlayer
+    local char = player.Character
+    if not char then return end
+    local seat
+    for _, c in pairs(char:GetChildren()) do
+        if c:IsA("VehicleSeat") and c.Occupant == char.Humanoid then seat = c; break end
+    end
+    if not seat then return end
+    local boat = seat.Parent
+    local boatHrp = boat:FindFirstChild("HumanoidRootPart")
+    if not boatHrp then return end
+    local targetDir = (heartPos - boatHrp.Position).Unit
+    local currentDir = boatHrp.CFrame.LookVector
+    local angle = math.acos(currentDir:Dot(targetDir))
+    local steer = seat:FindFirstChild("Steer")
+    if steer then steer.Value = math.clamp(angle * 2, -1, 1) end
+    task.wait(0.3)
+    if steer then steer.Value = 0 end
+end
+-- ===== KẾT THÚC PHẦN 2/5 =====
+-- ============================================
+-- LEVIATHAN HUNTER V6 - PHẦN 3/5
+-- ============================================
+local function mission_FindAndShoot()
+    if currentMission ~= "NONE" then Notify("Đang bận","Dừng nhiệm vụ trước",2) return end
+    currentMission = "FIND"
+    avoidanceActive = true
+    startAvoidance()
+    task.spawn(function()
+        local player = game.Players.LocalPlayer
+        if not spawnBoat(settings.boatName) then currentMission="NONE"; avoidanceActive=false; return end
+        task.wait(1)
+        if not getInBoat() then Notify("Lỗi","Không lên được thuyền",2); currentMission="NONE"; avoidanceActive=false; return end
+        while currentMission == "FIND" do
+            updateLeviathanInfo()
+            if leviathanInfo.isActive and leviathanInfo.position then
+                Notify("✅ Tìm thấy","Leviathan đã xuất hiện!",2)
+                break
+            end
+            controlBoat(CFrame.new(5000,0,-2000).Position, settings.fastSpeed)
+            task.wait(2)
+        end
+        while currentMission == "FIND" and leviathanInfo.position do
+            local dist = (leviathanInfo.position - player.Character.HumanoidRootPart.Position).Magnitude
+            if dist < 60 then break end
+            controlBoat(leviathanInfo.position, settings.fastSpeed)
+            task.wait(1)
+        end
+        local attempts = 0
+        while currentMission == "FIND" and attempts < settings.maxShootAttempts do
+            updateLeviathanInfo()
+            if not leviathanInfo.isActive then
+                Notify("Leviathan chết","Chờ tim rơi...",2)
+                task.wait(3)
+                updateLeviathanInfo()
+                if leviathanInfo.heartDropped then
+                    Notify("❤️ Tim rơi","Chuyển sang kéo tim",2)
+                    currentMission = "PULL"
+                    break
+                else
+                    Notify("Chưa thấy tim","Thử lại...",2)
+                end
+                attempts = attempts + 1
+                continue
+            end
+            shootAtHeart(leviathanInfo.position)
+            attempts = attempts + 1
+            Notify("Bắn tim","Lần "..attempts.."/"..settings.maxShootAttempts,1)
+            local oldHealth = leviathanInfo.health
+            task.wait(1)
+            updateLeviathanInfo()
+            if leviathanInfo.health < oldHealth - 300 then
+                Notify("❤️ Trúng tim!","Leviathan bị thương nặng",2)
+                task.wait(3)
+                updateLeviathanInfo()
+                if not leviathanInfo.isActive then
+                    Notify("🎉 Tiêu diệt","Kết thúc nhiệm vụ",3)
+                    currentMission = "NONE"
+                    break
+                end
+            else
+                adjustBoatAim(leviathanInfo.position)
+                task.wait(0.5)
+            end
+        end
+        if attempts >= settings.maxShootAttempts and currentMission=="FIND" then
+            Notify("Thất bại","Không bắn trúng tim",3)
+            currentMission = "NONE"
+        end
+        avoidanceActive = false
+        stopAvoidance()
+    end)
+end
+
+local function mission_PullHeart(dest)
+    if currentMission ~= "NONE" then Notify("Đang bận","Dừng nhiệm vụ trước",2) return end
+    currentMission = "PULL"
+    settings.pullDestination = dest
+    avoidanceActive = true
+    startAvoidance()
+    task.spawn(function()
+        local player = game.Players.LocalPlayer
+        local destPos = (dest == "Hydra") and CFrame.new(3000,0,-3000) or CFrame.new(2000,0,2000)
+        while currentMission == "PULL" do
+            updateLeviathanInfo()
+            if leviathanInfo.heartDropped and leviathanInfo.heartPosition then
+                Notify("❤️ Tìm thấy tim","Đang lái đến tim...",2)
+                break
+            end
+            Notify("Chờ tim","Chưa thấy tim Leviathan",2)
+            task.wait(2)
+        end
+        while currentMission == "PULL" and leviathanInfo.heartPosition do
+            local dist = (leviathanInfo.heartPosition - player.Character.HumanoidRootPart.Position).Magnitude
+            if dist < 30 then break end
+            controlBoat(leviathanInfo.heartPosition, settings.slowSpeed)
+            task.wait(1)
+        end
+        while currentMission == "PULL" do
+            updateLeviathanInfo()
+            if not leviathanInfo.heartPosition then
+                Notify("Lỗi","Mất tim!",2); break
+            end
+            local distToDest = (destPos.Position - leviathanInfo.heartPosition).Magnitude
+            if distToDest < 150 then
+                Notify("🏁 Hoàn thành","Đã kéo tim về "..dest,3)
+                currentMission = "NONE"
+                break
+            end
+            controlBoat(destPos.Position, settings.slowSpeed)
+            task.wait(1)
+        end
+        avoidanceActive = false
+        stopAvoidance()
+    end)
+end
+
+local function stopMission()
+    if currentMission ~= "NONE" then
+        currentMission = "NONE"
+        avoidanceActive = false
+        stopAvoidance()
+        Notify("Dừng","Đã hủy nhiệm vụ",2)
+    else
+        Notify("Không có","Không có nhiệm vụ đang chạy",1)
+    end
+end
+-- ===== KẾT THÚC PHẦN 3/5 =====
+-- ============================================
+-- LEVIATHAN HUNTER V6 - PHẦN 4/5
+-- ============================================
+local function pressKey(key)
+    local vim = game:GetService("VirtualInputManager")
+    pcall(function() vim:SendKeyEvent(true,key,false,game); task.wait(0.05); vim:SendKeyEvent(false,key,false,game) end)
+end
+
+local function attackM1()
+    pcall(function()
+        local vu = game:GetService("VirtualUser")
+        for i=1,5 do vu:Button1Down(Vector2.new(0,0)); task.wait(0.03); vu:Button1Up(Vector2.new(0,0)); task.wait(0.05) end
+    end)
+    Notify("Tấn công","Đã dùng M1 Fruit",0.5)
+end
+
+local function attackSkill()
+    for _,k in pairs(settings.skillKeys) do pressKey(k); task.wait(0.1) end
+    Notify("Tấn công","Đã dùng Skill (Z X C V F)",0.5)
+end
+
+local function attackGun()
+    pcall(function()
+        local vu = game:GetService("VirtualUser")
+        for i=1,8 do vu:Button1Down(Vector2.new(0,0)); task.wait(0.02); vu:Button1Up(Vector2.new(0,0)); task.wait(0.03) end
+    end)
+    for _,k in pairs({"Z","X"}) do pressKey(k); task.wait(0.1) end
+    Notify("Tấn công","Đã dùng Dual Flintlock",0.5)
+end
+
+-- Helper tạo section UI
+local function createSection(parent, title, height)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1,0,0,height)
+    frame.BackgroundColor3 = Color3.fromRGB(30,30,35)
+    frame.BackgroundTransparency = 0.3
+    frame.BorderSizePixel = 0
+    frame.Parent = parent
+    local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,8); corner.Parent = frame
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1,-20,0,25)
+    lbl.Position = UDim2.new(0,10,0,5)
+    lbl.Text = title
+    lbl.TextColor3 = Color3.fromRGB(255,200,100)
+    lbl.BackgroundTransparency = 1
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextSize = 13
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = frame
+    return frame
+end
+-- ===== KẾT THÚC PHẦN 4/5 =====
+-- ============================================
+-- LEVIATHAN HUNTER V6 - PHẦN 5/5
+-- ============================================
+-- Nút toggle menu bên ngoài
+local toggleMenuBtn = Instance.new("TextButton")
+toggleMenuBtn.Size = UDim2.new(0,50,0,50)
+toggleMenuBtn.Position = UDim2.new(0,10,0.5,-25)
+toggleMenuBtn.Text = "≡"
+toggleMenuBtn.TextColor3 = Color3.new(1,1,1)
+toggleMenuBtn.BackgroundColor3 = Color3.fromRGB(35,35,45)
+toggleMenuBtn.Font = Enum.Font.GothamBold
+toggleMenuBtn.TextSize = 24
+toggleMenuBtn.Parent = gui
+local tCorner = Instance.new("UICorner"); tCorner.CornerRadius = UDim.new(0,25); tCorner.Parent = toggleMenuBtn
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0,400,0,680)
+mainFrame.Position = UDim2.new(0.5,-200,0.5,-340)
+mainFrame.BackgroundColor3 = Color3.fromRGB(20,20,25)
+mainFrame.BackgroundTransparency = 0.05
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = gui
+local mCorner = Instance.new("UICorner"); mCorner.CornerRadius = UDim.new(0,10); mCorner.Parent = mainFrame
+
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1,0,0,45)
+titleBar.BackgroundColor3 = Color3.fromRGB(35,35,45)
+titleBar.Parent = mainFrame
+local titleCorner = Instance.new("UICorner"); titleCorner.CornerRadius = UDim.new(0,10); titleCorner.Parent = titleBar
+local titleText = Instance.new("TextLabel")
+titleText.Size = UDim2.new(1,-50,1,0)
+titleText.Position = UDim2.new(0,15,0,0)
+titleText.Text = "⚡ LEVIATHAN CONTROLLER V6 ⚡"
+titleText.TextColor3 = Color3.new(1,1,1)
+titleText.BackgroundTransparency = 1
+titleText.Font = Enum.Font.GothamBold
+titleText.TextSize = 15
+titleText.TextXAlignment = Enum.TextXAlignment.Left
+titleText.Parent = titleBar
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0,30,0,30)
+closeBtn.Position = UDim2.new(1,-40,0,8)
+closeBtn.Text = "✕"
+closeBtn.TextColor3 = Color3.new(1,1,1)
+closeBtn.BackgroundColor3 = Color3.fromRGB(200,60,60)
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextSize = 14
+closeBtn.Parent = titleBar
+local cCorner = Instance.new("UICorner"); cCorner.CornerRadius = UDim.new(0,5); cCorner.Parent = closeBtn
+closeBtn.MouseButton1Click:Connect(function() gui:Destroy() end)
+
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1,-20,1,-60)
+scroll.Position = UDim2.new(0,10,0,55)
+scroll.BackgroundTransparency = 1
+scroll.ScrollBarThickness = 4
+scroll.Parent = mainFrame
+local layout = Instance.new("UIListLayout"); layout.Padding = UDim.new(0,10); layout.Parent = scroll
+
+-- Section 1: Thông tin Leviathan
+local infoSec = createSection(scroll, "📊 THÔNG TIN LEVIATHAN", 100)
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(0.6,0,0,25)
+statusLabel.Position = UDim2.new(0,15,0,35)
+statusLabel.Text = "🔍 Đang kiểm tra..."
+statusLabel.TextColor3 = Color3.fromRGB(220,220,220)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Font = Enum.Font.Gotham
+statusLabel.TextSize = 12
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+statusLabel.Parent = infoSec
+local chipLabel = Instance.new("TextLabel")
+chipLabel.Size = UDim2.new(0.6,0,0,25)
+chipLabel.Position = UDim2.new(0,15,0,58)
+chipLabel.Text = "💳 Chip: ..."
+chipLabel.BackgroundTransparency = 1
+chipLabel.Font = Enum.Font.Gotham
+chipLabel.TextSize = 12
+chipLabel.TextXAlignment = Enum.TextXAlignment.Left
+chipLabel.Parent = infoSec
+local buyChipBtn = Instance.new("TextButton")
+buyChipBtn.Size = UDim2.new(0,120,0,35)
+buyChipBtn.Position = UDim2.new(1,-135,0,35)
+buyChipBtn.Text = "🛒 Mua Chip"
+buyChipBtn.BackgroundColor3 = Color3.fromRGB(200,100,50)
+buyChipBtn.Font = Enum.Font.GothamBold
+buyChipBtn.TextSize = 12
+buyChipBtn.Parent = infoSec
+local chipBtnCorner = Instance.new("UICorner"); chipBtnCorner.CornerRadius = UDim.new(0,6); chipBtnCorner.Parent = buyChipBtn
+buyChipBtn.MouseButton1Click:Connect(buyChip)
+
+-- Section 2: Di chuyển & tìm kiếm
+local moveSec = createSection(scroll, "📍 DI CHUYỂN & TÌM KIẾM", 100)
+local findBtn = Instance.new("TextButton")
+findBtn.Size = UDim2.new(0,160,0,35)
+findBtn.Position = UDim2.new(0.5,-165,0,40)
+findBtn.Text = "🔍 Tìm & Teleport"
+findBtn.BackgroundColor3 = Color3.fromRGB(70,130,200)
+findBtn.Font = Enum.Font.GothamBold
+findBtn.TextSize = 12
+findBtn.Parent = moveSec
+local findCorner = Instance.new("UICorner"); findCorner.CornerRadius = UDim.new(0,6); findCorner.Parent = findBtn
+findBtn.MouseButton1Click:Connect(function()
+    updateLeviathanInfo()
+    if leviathanInfo.isActive then
+        local player = game.Players.LocalPlayer
+        local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        if hrp and leviathanInfo.position then
+            hrp.CFrame = CFrame.new(leviathanInfo.position) * CFrame.new(0,35,-20)
+            Notify("✅ Teleport","Đã đến Leviathan",1)
+        else
+            Notify("Không thấy","Leviathan không tồn tại",2)
+        end
+    else
+        Notify("Không thấy","Leviathan chưa xuất hiện",2)
+    end
+end)
+local hangoutBtn = Instance.new("TextButton")
+hangoutBtn.Size = UDim2.new(0,160,0,35)
+hangoutBtn.Position = UDim2.new(0.5,5,0,40)
+hangoutBtn.Text = "🏠 Về điểm treo"
+hangoutBtn.BackgroundColor3 = Color3.fromRGB(100,100,100)
+hangoutBtn.Font = Enum.Font.GothamBold
+hangoutBtn.TextSize = 12
+hangoutBtn.Parent = moveSec
+local hangCorner = Instance.new("UICorner"); hangCorner.CornerRadius = UDim.new(0,6); hangCorner.Parent = hangoutBtn
+hangoutBtn.MouseButton1Click:Connect(function()
+    local player = game.Players.LocalPlayer
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if hrp then hrp.CFrame = settings.hangoutPos end
+    Notify("Teleport","Đã về điểm treo",1)
+end)
+
+-- Section 3: Tấn công thủ công
+local atkSec = createSection(scroll, "⚔️ TẤN CÔNG THỦ CÔNG", 130)
+local m1Btn = Instance.new("TextButton")
+m1Btn.Size = UDim2.new(0,110,0,40)
+m1Btn.Position = UDim2.new(0.5,-175,0,40)
+m1Btn.Text = "🍎 M1 Fruit"
+m1Btn.BackgroundColor3 = Color3.fromRGB(100,200,100)
+m1Btn.Font = Enum.Font.GothamBold
+m1Btn.TextSize = 12
+m1Btn.Parent = atkSec
+local m1Corner = Instance.new("UICorner"); m1Corner.CornerRadius = UDim.new(0,6); m1Corner.Parent = m1Btn
+m1Btn.MouseButton1Click:Connect(attackM1)
+local skillBtn = Instance.new("TextButton")
+skillBtn.Size = UDim2.new(0,110,0,40)
+skillBtn.Position = UDim2.new(0.5,-55,0,40)
+skillBtn.Text = "✨ Skill"
+skillBtn.BackgroundColor3 = Color3.fromRGB(150,100,200)
+skillBtn.Font = Enum.Font.GothamBold
+skillBtn.TextSize = 12
+skillBtn.Parent = atkSec
+local skCorner = Instance.new("UICorner"); skCorner.CornerRadius = UDim.new(0,6); skCorner.Parent = skillBtn
+skillBtn.MouseButton1Click:Connect(attackSkill)
+local gunBtn = Instance.new("TextButton")
+gunBtn.Size = UDim2.new(0,110,0,40)
+gunBtn.Position = UDim2.new(0.5,65,0,40)
+gunBtn.Text = "🔫 Dual Flintlock"
+gunBtn.BackgroundColor3 = Color3.fromRGB(200,130,70)
+gunBtn.Font = Enum.Font.GothamBold
+gunBtn.TextSize = 12
+gunBtn.Parent = atkSec
+local gunCorner = Instance.new("UICorner"); gunCorner.CornerRadius = UDim.new(0,6); gunCorner.Parent = gunBtn
+gunBtn.MouseButton1Click:Connect(attackGun)
+local note = Instance.new("TextLabel")
+note.Size = UDim2.new(1,-20,0,25)
+note.Position = UDim2.new(0,15,0,95)
+note.Text = "💡 Click nút nào, tấn công kiểu đó - Không auto"
+note.TextColor3 = Color3.fromRGB(200,200,100)
+note.BackgroundTransparency = 1
+note.Font = Enum.Font.Gotham
+note.TextSize = 11
+note.TextXAlignment = Enum.TextXAlignment.Left
+note.Parent = atkSec
+
+-- Section 4: Mua thuyền
+local boatSec = createSection(scroll, "⛵ MUA THUYỀN", 100)
+local hunterBtn = Instance.new("TextButton")
+hunterBtn.Size = UDim2.new(0,165,0,35)
+hunterBtn.Position = UDim2.new(0.5,-170,0,40)
+hunterBtn.Text = "🛥️ Thợ săn thủy quái"
+hunterBtn.BackgroundColor3 = Color3.fromRGB(70,130,200)
+hunterBtn.Font = Enum.Font.GothamBold
+hunterBtn.TextSize = 11
+hunterBtn.Parent = boatSec
+local hCorner = Instance.new("UICorner"); hCorner.CornerRadius = UDim.new(0,6); hCorner.Parent = hunterBtn
+hunterBtn.MouseButton1Click:Connect(function()
+    local name = "Thợ săn thủy quái"
+    local player = game.Players.LocalPlayer
+    if player.Backpack:FindFirstChild(name) then Notify("Thuyền","Đã có rồi",2) return end
+    local npc
+    for _,v in pairs(workspace:GetDescendants()) do
+        if v:IsA("Model") and v.Name and v.Name:lower():find("shipwright") then npc = v; break end
+    end
+    if not npc then Notify("Lỗi","Không tìm thấy NPC",2) return end
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        local npcPos = npc:FindFirstChild("HumanoidRootPart") or npc:FindFirstChild("Head")
+        if npcPos then hrp.CFrame = npcPos.CFrame * CFrame.new(0,0,5); task.wait(1) end
+    end
+    for _,v in pairs(player.PlayerGui:GetDescendants()) do
+        if v:IsA("TextButton") and v.Visible and v.Text:lower():find(name:lower()) then
+            pcall(function() v:Click() end); break
+        end
+    end
+    Notify("Mua","Đã mua "..name,2)
+end)
+local guardianBtn = Instance.new("TextButton")
+guardianBtn.Size = UDim2.new(0,165,0,35)
+guardianBtn.Position = UDim2.new(0.5,5,0,40)
+guardianBtn.Text = "⚔️ Người giám hộ"
+guardianBtn.BackgroundColor3 = Color3.fromRGB(200,130,70)
+guardianBtn.Font = Enum.Font.GothamBold
+guardianBtn.TextSize = 11
+guardianBtn.Parent = boatSec
+local gCorner = Instance.new("UICorner"); gCorner.CornerRadius = UDim.new(0,6); gCorner.Parent = guardianBtn
+guardianBtn.MouseButton1Click:Connect(function()
+    local name = "Người giám hộ"
+    local player = game.Players.LocalPlayer
+    if player.Backpack:FindFirstChild(name) then Notify("Thuyền","Đã có rồi",2) return end
+    local npc
+    for _,v in pairs(workspace:GetDescendants()) do
+        if v:IsA("Model") and v.Name and v.Name:lower():find("shipwright") then npc = v; break end
+    end
+    if not npc then Notify("Lỗi","Không tìm thấy NPC",2) return end
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        local npcPos = npc:FindFirstChild("HumanoidRootPart") or npc:FindFirstChild("Head")
+        if npcPos then hrp.CFrame = npcPos.CFrame * CFrame.new(0,0,5); task.wait(1) end
+    end
+    for _,v in pairs(player.PlayerGui:GetDescendants()) do
+        if v:IsA("TextButton") and v.Visible and v.Text:lower():find(name:lower()) then
+            pcall(function() v:Click() end); break
+        end
+    end
+    Notify("Mua","Đã mua "..name,2)
+end)
+
+-- Section 5: Nhiệm vụ tự động
+local autoSec = createSection(scroll, "🤖 NHIỆM VỤ TỰ ĐỘNG", 200)
+local boatSelectFrame = Instance.new("Frame")
+boatSelectFrame.Size = UDim2.new(1,0,0,30)
+boatSelectFrame.Position = UDim2.new(0,0,0,40)
+boatSelectFrame.BackgroundTransparency = 1
+boatSelectFrame.Parent = autoSec
+local setBoatName = function(name)
+    settings.boatName = name
+    Notify("Chọn thuyền","Đã chọn "..name,1)
+end
+local selectHunter = Instance.new("TextButton")
+selectHunter.Size = UDim2.new(0,180,0,25)
+selectHunter.Position = UDim2.new(0,10,0,0)
+selectHunter.Text = "🚤 Dùng thuyền: Thợ săn"
+selectHunter.BackgroundColor3 = Color3.fromRGB(70,130,200)
+selectHunter.Font = Enum.Font.GothamBold
+selectHunter.TextSize = 10
+selectHunter.Parent = boatSelectFrame
+local selCorner = Instance.new("UICorner"); selCorner.CornerRadius = UDim.new(0,4); selCorner.Parent = selectHunter
+selectHunter.MouseButton1Click:Connect(function() setBoatName("Thợ săn thủy quái") end)
+local selectGuardian = Instance.new("TextButton")
+selectGuardian.Size = UDim2.new(0,180,0,25)
+selectGuardian.Position = UDim2.new(0,200,0,0)
+selectGuardian.Text = "🛡️ Dùng thuyền: Người giám hộ"
+selectGuardian.BackgroundColor3 = Color3.fromRGB(200,130,70)
+selectGuardian.Font = Enum.Font.GothamBold
+selectGuardian.TextSize = 10
+selectGuardian.Parent = boatSelectFrame
+local selCorner2 = Instance.new("UICorner"); selCorner2.CornerRadius = UDim.new(0,4); selCorner2.Parent = selectGuardian
+selectGuardian.MouseButton1Click:Connect(function() setBoatName("Người giám hộ") end)
+
+local startFindBtn = Instance.new("TextButton")
+startFindBtn.Size = UDim2.new(0,180,0,35)
+startFindBtn.Position = UDim2.new(0.5,-185,0,80)
+startFindBtn.Text = "⚓ Bắt đầu săn (tự bắn tim)"
+startFindBtn.BackgroundColor3 = Color3.fromRGB(60,180,60)
+startFindBtn.Font = Enum.Font.GothamBold
+startFindBtn.TextSize = 11
+startFindBtn.Parent = autoSec
+local sfCorner = Instance.new("UICorner"); sfCorner.CornerRadius = UDim.new(0,6); sfCorner.Parent = startFindBtn
+startFindBtn.MouseButton1Click:Connect(function()
+    if not settings.boatName then Notify("Lỗi","Hãy chọn thuyền trước",2) return end
+    mission_FindAndShoot()
+end)
+
+local pullHydraBtn = Instance.new("TextButton")
+pullHydraBtn.Size = UDim2.new(0,120,0,35)
+pullHydraBtn.Position = UDim2.new(0.5,-125,0,125)
+pullHydraBtn.Text = "📦 Kéo tim về Hydra"
+pullHydraBtn.BackgroundColor3 = Color3.fromRGB(100,150,200)
+pullHydraBtn.Font = Enum.Font.GothamBold
+pullHydraBtn.TextSize = 10
+pullHydraBtn.Parent = autoSec
+local phCorner = Instance.new("UICorner"); phCorner.CornerRadius = UDim.new(0,6); phCorner.Parent = pullHydraBtn
+pullHydraBtn.MouseButton1Click:Connect(function() mission_PullHeart("Hydra") end)
+
+local pullTikiBtn = Instance.new("TextButton")
+pullTikiBtn.Size = UDim2.new(0,120,0,35)
+pullTikiBtn.Position = UDim2.new(0.5,5,0,125)
+pullTikiBtn.Text = "📦 Kéo tim về Tiki"
+pullTikiBtn.BackgroundColor3 = Color3.fromRGB(100,150,200)
+pullTikiBtn.Font = Enum.Font.GothamBold
+pullTikiBtn.TextSize = 10
+pullTikiBtn.Parent = autoSec
+local ptCorner = Instance.new("UICorner"); ptCorner.CornerRadius = UDim.new(0,6); ptCorner.Parent = pullTikiBtn
+pullTikiBtn.MouseButton1Click:Connect(function() mission_PullHeart("Tiki") end)
+
+local stopMissionBtn = Instance.new("TextButton")
+stopMissionBtn.Size = UDim2.new(0,120,0,35)
+stopMissionBtn.Position = UDim2.new(0.5,-60,0,170)
+stopMissionBtn.Text = "🛑 Dừng nhiệm vụ"
+stopMissionBtn.BackgroundColor3 = Color3.fromRGB(200,60,60)
+stopMissionBtn.Font = Enum.Font.GothamBold
+stopMissionBtn.TextSize = 12
+stopMissionBtn.Parent = autoSec
+local smCorner = Instance.new("UICorner"); smCorner.CornerRadius = UDim.new(0,6); smCorner.Parent = stopMissionBtn
+stopMissionBtn.MouseButton1Click:Connect(stopMission)
+
+local avoidToggle = Instance.new("TextButton")
+avoidToggle.Size = UDim2.new(0,120,0,30)
+avoidToggle.Position = UDim2.new(0.5,-60,0,215)
+avoidToggle.Text = "🕊️ Bật né sự kiện"
+avoidToggle.BackgroundColor3 = Color3.fromRGB(100,100,100)
+avoidToggle.Font = Enum.Font.GothamBold
+avoidToggle.TextSize = 10
+avoidToggle.Parent = autoSec
+local avCorner = Instance.new("UICorner"); avCorner.CornerRadius = UDim.new(0,6); avCorner.Parent = avoidToggle
+avoidToggle.MouseButton1Click:Connect(function()
+    avoidanceActive = not avoidanceActive
+    if avoidanceActive then
+        startAvoidance()
+        avoidToggle.Text = "🕊️ Tắt né sự kiện"
+        avoidToggle.BackgroundColor3 = Color3.fromRGB(200,100,50)
+        Notify("Né","Đã bật tự động né sự kiện",1)
+    else
+        stopAvoidance()
+        avoidToggle.Text = "🕊️ Bật né sự kiện"
+        avoidToggle.BackgroundColor3 = Color3.fromRGB(100,100,100)
+        Notify("Né","Đã tắt né sự kiện",1)
+    end
+end)
+
+-- Refresh thông tin định kỳ
+task.spawn(function()
+    while true do
+        task.wait(2)
+        pcall(function()
+            updateLeviathanInfo()
+            checkChipStatus()
+            if leviathanInfo.isActive then
+                statusLabel.Text = "🔴 Leviathan: ĐANG XUẤT HIỆN (Máu: "..leviathanInfo.health..")"
+                statusLabel.TextColor3 = Color3.fromRGB(255,100,100)
+            else
+                statusLabel.Text = "🟢 Leviathan: Chưa xuất hiện"
+                statusLabel.TextColor3 = Color3.fromRGB(100,255,100)
+            end
+            if leviathanInfo.hasChip then
+                chipLabel.Text = "💳 Chip: ✅ Đã có"
+                chipLabel.TextColor3 = Color3.fromRGB(100,255,100)
+                buyChipBtn.Visible = false
+            else
+                chipLabel.Text = "💳 Chip: ❌ Chưa có"
+                chipLabel.TextColor3 = Color3.fromRGB(255,100,100)
+                buyChipBtn.Visible = true
+            end
+        end)
+    end
+end)
+
+-- Cập nhật canvas cho ScrollingFrame
+local function updateCanvas()
+    local totalH = 0
+    for _,c in pairs(scroll:GetChildren()) do
+        if c:IsA("Frame") and c ~= layout then totalH = totalH + c.Size.Y.Offset + 10 end
+    end
+    scroll.CanvasSize = UDim2.new(0,0,0,totalH+20)
+end
+task.wait(0.1)
+updateCanvas()
+
+toggleMenuBtn.MouseButton1Click:Connect(function()
+    menuVisible = not menuVisible
+    mainFrame.Visible = menuVisible
+    toggleMenuBtn.Text = menuVisible and "≡" or "✕"
+    toggleMenuBtn.BackgroundColor3 = menuVisible and Color3.fromRGB(35,35,45) or Color3.fromRGB(200,60,60)
+end)
+
+Notify("Leviathan Controller V6","✅ Đã tải! Mỗi chức năng có nút riêng.",4)
+-- ===== KẾT THÚC PHẦN 5/5 =====
