@@ -1,0 +1,620 @@
+-- ============================================
+-- HDZ LEVIATHAN BY HOANG - PHẦN 1/7
+-- ============================================
+local gui = Instance.new("ScreenGui")
+gui.Name = "HDZLeviathan"
+gui.ResetOnSpawn = false
+gui.Parent = game:GetService("CoreGui")
+
+local player = game.Players.LocalPlayer
+local character = player.Character
+local isHunting = false
+local currentMission = "NONE"
+local avoidActive = false
+local avoidThread = nil
+local attackMode = "M1"
+local boatSpeed = 100
+
+local settings = {
+    skillKeys = {"Z","X","C","V","F"},
+    hangoutPos = CFrame.new(2000, 50, 2000),
+    boatName = nil,
+    fastSpeed = 100,
+    slowSpeed = 30,
+    maxShootAttempts = 10,
+    pullDest = "Hydra"
+}
+
+local leviInfo = {
+    active = false, pos = nil, health = 0,
+    heartPos = nil, hasChip = false, lastSeen = 0
+}
+
+local function Notify(title, text, dur)
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = title, Text = text, Duration = dur or 3
+    })
+end
+
+local function fetchStats()
+    local data = player:FindFirstChild("Data") or player:FindFirstChild("PlayerStats")
+    local lv = data and data:FindFirstChild("Level") and data.Level.Value or 0
+    local exp = data and data:FindFirstChild("Experience") and data.Experience.Value or 0
+    local req = data and data:FindFirstChild("RequiredExperience") and data.RequiredExperience.Value or 1000
+    local money = data and data:FindFirstChild("Money") and data.Money.Value or 0
+    local hum = character and character:FindFirstChild("Humanoid")
+    local hp = hum and math.floor(hum.Health) or 0
+    local maxHp = hum and math.floor(hum.MaxHealth) or 100
+    local eng = character and character:FindFirstChild("Energy") and character.Energy.Value or 0
+    local maxEng = character and character:FindFirstChild("Energy") and (character.Energy.MaxValue or 100) or 100
+    return lv, exp, req, money, hp, maxHp, eng, maxEng
+end
+
+local function updateLevi()
+    leviInfo.active = false
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name and obj.Name:lower():find("leviathan") then
+            leviInfo.active = true
+            leviInfo.lastSeen = tick()
+            local hrp = obj:FindFirstChild("HumanoidRootPart")
+            if hrp then leviInfo.pos = hrp.Position end
+            local hum = obj:FindFirstChild("Humanoid")
+            if hum then leviInfo.health = math.floor(hum.Health) end
+            return
+        end
+    end
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name and (obj.Name:lower():find("heart") or obj.Name:lower():find("leviathanheart")) then
+            local hrp = obj:FindFirstChild("HumanoidRootPart")
+            leviInfo.heartPos = hrp and hrp.Position or obj.Position
+            return
+        end
+    end
+    if tick() - (leviInfo.lastSeen or 0) > 60 then
+        leviInfo.active = false
+        leviInfo.health = 0
+    end
+end
+-- ===== HẾT PHẦN 1/7 =====
+-- ============================================
+-- HDZ LEVIATHAN BY HOANG - PHẦN 2/7
+-- ============================================
+local function checkChip()
+    local bp = player:FindFirstChild("Backpack")
+    if bp then
+        for _, it in pairs(bp:GetChildren()) do
+            if it.Name and (it.Name:lower():find("chip") or it.Name:lower():find("leviathan")) then
+                leviInfo.hasChip = true; return true
+            end
+        end
+    end
+    if character then
+        for _, it in pairs(character:GetChildren()) do
+            if it.Name and (it.Name:lower():find("chip") or it.Name:lower():find("leviathan")) then
+                leviInfo.hasChip = true; return true
+            end
+        end
+    end
+    leviInfo.hasChip = false; return false
+end
+
+local function buyChip()
+    if checkChip() then Notify("Chip","✅ Đã có chip",2) return end
+    local npc
+    for _, v in pairs(workspace:GetDescendants()) do
+        if v:IsA("Model") and v.Name and v.Name:lower():find("explorer") then npc = v; break end
+    end
+    if not npc then Notify("Lỗi","Không tìm thấy Explorer ở Tiki!",3) return end
+    local hrp = character and character:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        local npcPos = npc:FindFirstChild("HumanoidRootPart") or npc:FindFirstChild("Head")
+        if npcPos then hrp.CFrame = npcPos.CFrame * CFrame.new(0,0,5); task.wait(1) end
+    end
+    for _, v in pairs(player.PlayerGui:GetDescendants()) do
+        if v:IsA("TextButton") and v.Visible and v.Text:lower():find("chip") then
+            pcall(v.Click); break
+        end
+    end
+    task.wait(1)
+    if checkChip() then Notify("Chip","🛒 Mua thành công",2)
+    else Notify("Chip","Thất bại, cần 1000$",3) end
+end
+
+local function buyBoat(boatName)
+    if player.Backpack:FindFirstChild(boatName) then
+        Notify("Thuyền","✅ Đã có "..boatName,2) return
+    end
+    local npc
+    for _, v in pairs(workspace:GetDescendants()) do
+        if v:IsA("Model") and v.Name and v.Name:lower():find("boat dealer") then npc = v; break end
+    end
+    if not npc then Notify("Lỗi","Không tìm thấy Boat Dealer ở Tiki!",3) return end
+    local hrp = character and character:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        local npcPos = npc:FindFirstChild("HumanoidRootPart") or npc:FindFirstChild("Head")
+        if npcPos then hrp.CFrame = npcPos.CFrame * CFrame.new(0,0,5); task.wait(1) end
+    end
+    for _, v in pairs(player.PlayerGui:GetDescendants()) do
+        if v:IsA("TextButton") and v.Visible and v.Text:lower():find(boatName:lower()) then
+            pcall(v.Click); break
+        end
+    end
+    Notify("Mua thuyền","Đã mua "..boatName,2)
+end
+
+local function spawnBoat()
+    if not settings.boatName then return false end
+    local bp = player:FindFirstChild("Backpack")
+    local boat = bp and bp:FindFirstChild(settings.boatName) or (character and character:FindFirstChild(settings.boatName))
+    if not boat then Notify("Lỗi","Chưa có thuyền "..settings.boatName,2) return false end
+    local newBoat = boat:Clone()
+    newBoat.Parent = character
+    task.wait(0.5)
+    pcall(function() newBoat:Activate() end)
+    return true
+end
+
+local function getInBoat()
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("VehicleSeat") and obj.Parent and obj.Parent.Name == settings.boatName then
+            local hrp = obj.Parent:FindFirstChild("HumanoidRootPart")
+            if hrp and character and (hrp.Position - character.HumanoidRootPart.Position).Magnitude < 20 then
+                pcall(function() obj:Sit(character.Humanoid) end)
+                task.wait(0.5)
+                return obj
+            end
+        end
+    end
+    return nil
+end
+-- ===== HẾT PHẦN 2/7 =====
+-- ============================================
+-- HDZ LEVIATHAN BY HOANG - PHẦN 3/7
+-- ============================================
+local function controlBoat(dest, speed)
+    local seat
+    for _, c in pairs(character:GetChildren()) do
+        if c:IsA("VehicleSeat") and c.Occupant == character.Humanoid then seat = c; break end
+    end
+    if not seat then seat = getInBoat(); if not seat then return false end end
+    local boat = seat.Parent
+    local boatHrp = boat:FindFirstChild("HumanoidRootPart")
+    if not boatHrp then return false end
+    local throttle = seat:FindFirstChild("Throttle") or Instance.new("NumberValue")
+    throttle.Name = "Throttle"; throttle.Value = speed; throttle.Parent = seat
+    local steer = seat:FindFirstChild("Steer") or Instance.new("NumberValue")
+    steer.Name = "Steer"; steer.Value = 0; steer.Parent = seat
+    boatHrp.CFrame = CFrame.lookAt(boatHrp.Position, dest)
+    return true
+end
+
+local function startAvoid()
+    if avoidThread then return end
+    avoidThread = task.spawn(function()
+        while avoidActive do
+            if character then
+                local hrp = character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    for _, v in pairs(workspace:GetDescendants()) do
+                        if v:IsA("Part") and v.Name and v.Name:lower():find("lightning") then
+                            if (v.Position - hrp.Position).Magnitude < 50 then
+                                hrp.CFrame = hrp.CFrame + Vector3.new(0,120,0)
+                                Notify("⚠️ Né","Đã bay lên tránh sét",1)
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+            task.wait(1)
+        end
+    end)
+end
+
+local function stopAvoid()
+    if avoidThread then task.cancel(avoidThread); avoidThread = nil end
+end
+
+local function shootAt(pos)
+    if not character then return end
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if hrp then hrp.CFrame = CFrame.lookAt(hrp.Position, pos) end
+    pcall(function()
+        local vu = game:GetService("VirtualUser")
+        vu:Button1Down(Vector2.new(0,0)); task.wait(0.05); vu:Button1Up(Vector2.new(0,0))
+    end)
+end
+
+local function adjustAim(heartPos)
+    local seat
+    for _, c in pairs(character:GetChildren()) do
+        if c:IsA("VehicleSeat") and c.Occupant == character.Humanoid then seat = c; break end
+    end
+    if not seat then return end
+    local boat = seat.Parent
+    local boatHrp = boat:FindFirstChild("HumanoidRootPart")
+    if not boatHrp then return end
+    local targetDir = (heartPos - boatHrp.Position).Unit
+    local currentDir = boatHrp.CFrame.LookVector
+    local angle = math.acos(currentDir:Dot(targetDir))
+    local steer = seat:FindFirstChild("Steer")
+    if steer then steer.Value = math.clamp(angle * 2, -1, 1) end
+    task.wait(0.3)
+    if steer then steer.Value = 0 end
+end
+
+local function teleportToLevi()
+    updateLevi()
+    if leviInfo.active and leviInfo.pos then
+        local hrp = character and character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            hrp.CFrame = CFrame.new(leviInfo.pos) * CFrame.new(0,35,-20)
+            Notify("✅ Teleport","Đã đến Leviathan",1)
+        end
+    else
+        Notify("Không thấy","Leviathan chưa xuất hiện",2)
+    end
+end
+-- ===== HẾT PHẦN 3/7 =====
+-- ============================================
+-- HDZ LEVIATHAN BY HOANG - PHẦN 4/7
+-- ============================================
+local function mission_FindAndShoot()
+    if currentMission ~= "NONE" then Notify("Đang bận","Dừng nhiệm vụ trước",2) return end
+    currentMission = "FIND"
+    avoidActive = true
+    startAvoid()
+    task.spawn(function()
+        if not spawnBoat() then currentMission="NONE"; avoidActive=false; return end
+        task.wait(1)
+        if not getInBoat() then Notify("Lỗi","Không lên được thuyền",2); currentMission="NONE"; avoidActive=false; return end
+        while currentMission == "FIND" do
+            updateLevi()
+            if leviInfo.active and leviInfo.pos then
+                Notify("✅ Tìm thấy","Leviathan đã xuất hiện!",2)
+                break
+            end
+            controlBoat(CFrame.new(5000,0,-2000).Position, settings.fastSpeed)
+            task.wait(2)
+        end
+        while currentMission == "FIND" and leviInfo.pos do
+            local dist = (leviInfo.pos - character.HumanoidRootPart.Position).Magnitude
+            if dist < 60 then break end
+            controlBoat(leviInfo.pos, settings.fastSpeed)
+            task.wait(1)
+        end
+        local attempts = 0
+        while currentMission == "FIND" and attempts < settings.maxShootAttempts do
+            updateLevi()
+            if not leviInfo.active then
+                Notify("Leviathan chết","Chờ tim rơi...",2)
+                task.wait(3)
+                updateLevi()
+                if leviInfo.heartPos then
+                    Notify("❤️ Tim rơi","Chuyển sang kéo tim",2)
+                    currentMission = "PULL"
+                    break
+                else
+                    Notify("Chưa thấy tim","Thử lại...",2)
+                end
+                attempts = attempts + 1
+                continue
+            end
+            shootAt(leviInfo.pos)
+            attempts = attempts + 1
+            Notify("Bắn tim","Lần "..attempts.."/"..settings.maxShootAttempts,1)
+            local oldHealth = leviInfo.health
+            task.wait(1)
+            updateLevi()
+            if leviInfo.health < oldHealth - 300 then
+                Notify("❤️ Trúng tim!","Leviathan bị thương nặng",2)
+                task.wait(3)
+                updateLevi()
+                if not leviInfo.active then
+                    Notify("🎉 Tiêu diệt","Kết thúc nhiệm vụ",3)
+                    currentMission = "NONE"
+                    break
+                end
+            else
+                adjustAim(leviInfo.pos)
+                task.wait(0.5)
+            end
+        end
+        if attempts >= settings.maxShootAttempts and currentMission=="FIND" then
+            Notify("Thất bại","Không bắn trúng tim",3)
+            currentMission = "NONE"
+        end
+        avoidActive = false; stopAvoid()
+    end)
+end
+-- ===== HẾT PHẦN 4/7 =====
+-- ============================================
+-- HDZ LEVIATHAN BY HOANG - PHẦN 5/7
+-- ============================================
+local function mission_PullHeart(dest)
+    if currentMission ~= "NONE" then Notify("Đang bận","Dừng nhiệm vụ trước",2) return end
+    currentMission = "PULL"
+    settings.pullDest = dest
+    avoidActive = true
+    startAvoid()
+    task.spawn(function()
+        local destPos = (dest == "Hydra") and CFrame.new(3000,0,-3000) or CFrame.new(2000,0,2000)
+        while currentMission == "PULL" do
+            updateLevi()
+            if leviInfo.heartPos then
+                Notify("❤️ Tìm thấy tim","Đang lái đến tim...",2)
+                break
+            end
+            Notify("Chờ tim","Chưa thấy tim Leviathan",2)
+            task.wait(2)
+        end
+        while currentMission == "PULL" and leviInfo.heartPos do
+            local dist = (leviInfo.heartPos - character.HumanoidRootPart.Position).Magnitude
+            if dist < 30 then break end
+            controlBoat(leviInfo.heartPos, settings.slowSpeed)
+            task.wait(1)
+        end
+        while currentMission == "PULL" do
+            updateLevi()
+            if not leviInfo.heartPos then
+                Notify("Lỗi","Mất tim!",2); break
+            end
+            local distToDest = (destPos.Position - leviInfo.heartPos).Magnitude
+            if distToDest < 150 then
+                Notify("🏁 Hoàn thành","Đã kéo tim về "..dest,3)
+                currentMission = "NONE"
+                break
+            end
+            controlBoat(destPos.Position, settings.slowSpeed)
+            task.wait(1)
+        end
+        avoidActive = false; stopAvoid()
+    end)
+end
+
+local function stopMission()
+    if currentMission ~= "NONE" then
+        currentMission = "NONE"
+        avoidActive = false; stopAvoid()
+        Notify("Dừng","Đã hủy nhiệm vụ",2)
+    else
+        Notify("Không có","Không có nhiệm vụ đang chạy",1)
+    end
+end
+
+local function pressKey(key)
+    local vim = game:GetService("VirtualInputManager")
+    pcall(function()
+        vim:SendKeyEvent(true,key,false,game); task.wait(0.05); vim:SendKeyEvent(false,key,false,game)
+    end)
+end
+
+local function attackM1()
+    pcall(function()
+        local vu = game:GetService("VirtualUser")
+        for i=1,5 do vu:Button1Down(Vector2.new(0,0)); task.wait(0.03); vu:Button1Up(Vector2.new(0,0)); task.wait(0.05) end
+    end)
+    Notify("Tấn công","Đã dùng M1 Fruit",0.5)
+end
+
+local function attackSkill()
+    for _,k in pairs(settings.skillKeys) do pressKey(k); task.wait(0.1) end
+    Notify("Tấn công","Đã dùng Skill (Z X C V F)",0.5)
+end
+
+local function attackGun()
+    pcall(function()
+        local vu = game:GetService("VirtualUser")
+        for i=1,8 do vu:Button1Down(Vector2.new(0,0)); task.wait(0.02); vu:Button1Up(Vector2.new(0,0)); task.wait(0.03) end
+    end)
+    for _,k in pairs({"Z","X"}) do pressKey(k); task.wait(0.1) end
+    Notify("Tấn công","Đã dùng Dual Flintlock",0.5)
+end
+-- ===== HẾT PHẦN 5/7 =====
+-- ============================================
+-- HDZ LEVIATHAN BY HOANG - PHẦN 6/7
+-- ============================================
+local tabs = {}
+local currentTab = nil
+local function switchTab(name)
+    for k, v in pairs(tabs) do v.Visible = (k == name) end
+    currentTab = name
+end
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0,420,0,520)
+mainFrame.Position = UDim2.new(0.5,-210,0.5,-260)
+mainFrame.BackgroundColor3 = Color3.fromRGB(20,20,25)
+mainFrame.BackgroundTransparency = 0.05
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = gui
+local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,10); corner.Parent = mainFrame
+
+local titleBar = Instance.new("Frame"); titleBar.Size = UDim2.new(1,0,0,45)
+titleBar.BackgroundColor3 = Color3.fromRGB(35,35,45); titleBar.Parent = mainFrame
+local titleCorner = Instance.new("UICorner"); titleCorner.CornerRadius = UDim.new(0,10); titleCorner.Parent = titleBar
+local titleText = Instance.new("TextLabel")
+titleText.Size = UDim2.new(1,-50,1,0); titleText.Position = UDim2.new(0,15,0,0)
+titleText.Text = "⚡ HDZ LEVIATHAN by hoang ⚡"
+titleText.TextColor3 = Color3.new(1,1,1); titleText.BackgroundTransparency = 1
+titleText.Font = Enum.Font.GothamBold; titleText.TextSize = 16; titleText.TextXAlignment = Enum.TextXAlignment.Left
+titleText.Parent = titleBar
+
+local closeBtn = Instance.new("TextButton"); closeBtn.Size = UDim2.new(0,30,0,30)
+closeBtn.Position = UDim2.new(1,-40,0,8); closeBtn.Text = "✕"
+closeBtn.TextColor3 = Color3.new(1,1,1); closeBtn.BackgroundColor3 = Color3.fromRGB(200,60,60)
+closeBtn.Font = Enum.Font.GothamBold; closeBtn.TextSize = 14; closeBtn.Parent = titleBar
+local cCorner = Instance.new("UICorner"); cCorner.CornerRadius = UDim.new(0,5); cCorner.Parent = closeBtn
+closeBtn.MouseButton1Click:Connect(function() gui:Destroy() end)
+
+local tabBar = Instance.new("Frame"); tabBar.Size = UDim2.new(1,0,0,40)
+tabBar.Position = UDim2.new(0,0,0,45); tabBar.BackgroundColor3 = Color3.fromRGB(30,30,35)
+tabBar.Parent = mainFrame
+
+local function makeTab(name, text, x)
+    local btn = Instance.new("TextButton"); btn.Size = UDim2.new(0,100,0,30)
+    btn.Position = UDim2.new(x,0,0,5); btn.Text = text; btn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+    btn.TextColor3 = Color3.new(1,1,1); btn.Font = Enum.Font.GothamBold; btn.TextSize = 12
+    btn.BorderSizePixel = 0; btn.Parent = tabBar
+    local bCorner = Instance.new("UICorner"); bCorner.CornerRadius = UDim.new(0,5); bCorner.Parent = btn
+    btn.MouseButton1Click:Connect(function() switchTab(name) end)
+    local frame = Instance.new("Frame"); frame.Size = UDim2.new(1,-20,1,-100)
+    frame.Position = UDim2.new(0,10,0,95); frame.BackgroundTransparency = 1
+    frame.Visible = false; frame.Parent = mainFrame
+    tabs[name] = frame
+    return frame
+end
+
+local infoTab = makeTab("Info", "📊 Thông Tin", 0.05)
+local combatTab = makeTab("Combat", "⚔️ Săn Leviathan", 0.3)
+local settingTab = makeTab("Settings", "⚙️ Cài Đặt", 0.55)
+local shopTab = makeTab("Shop", "🛒 Cửa Hàng", 0.8)
+
+switchTab("Info")
+-- ===== HẾT PHẦN 6/7 =====
+-- ============================================
+-- HDZ LEVIATHAN BY HOANG - PHẦN 7/7
+-- ============================================
+local function addStatBox(parent, y)
+    local box = Instance.new("Frame"); box.Size = UDim2.new(1,0,0,130)
+    box.Position = UDim2.new(0,0,0,y); box.BackgroundColor3 = Color3.fromRGB(30,30,35)
+    box.BackgroundTransparency = 0.3; box.Parent = parent
+    local bCorner = Instance.new("UICorner"); bCorner.CornerRadius = UDim.new(0,8); bCorner.Parent = box
+    return box
+end
+
+local statsBox = addStatBox(infoTab, 0)
+local levelL = Instance.new("TextLabel"); levelL.Size = UDim2.new(1,-20,0,25)
+levelL.Position = UDim2.new(0,15,0,10); levelL.Text = "Lv. ?"; levelL.TextColor3 = Color3.new(1,1,1)
+levelL.BackgroundTransparency = 1; levelL.Font = Enum.Font.GothamBold; levelL.TextSize = 14
+levelL.TextXAlignment = Enum.TextXAlignment.Left; levelL.Parent = statsBox
+
+local expL = Instance.new("TextLabel"); expL.Size = UDim2.new(1,-20,0,25)
+expL.Position = UDim2.new(0,15,0,35); expL.Text = "EXP: ? / ?"
+expL.TextColor3 = Color3.fromRGB(200,200,200); expL.BackgroundTransparency = 1
+expL.Font = Enum.Font.Gotham; expL.TextSize = 12; expL.TextXAlignment = Enum.TextXAlignment.Left
+expL.Parent = statsBox
+
+local moneyL = Instance.new("TextLabel"); moneyL.Size = UDim2.new(1,-20,0,25)
+moneyL.Position = UDim2.new(0,15,0,60); moneyL.Text = "$ ?"
+moneyL.TextColor3 = Color3.fromRGB(100,200,255); moneyL.BackgroundTransparency = 1
+moneyL.Font = Enum.Font.GothamBold; moneyL.TextSize = 14; moneyL.TextXAlignment = Enum.TextXAlignment.Left
+moneyL.Parent = statsBox
+
+local hpL = Instance.new("TextLabel"); hpL.Size = UDim2.new(0.5,0,0,25)
+hpL.Position = UDim2.new(0,15,0,85); hpL.Text = "❤️ Health: ? / ?"
+hpL.TextColor3 = Color3.fromRGB(255,100,100); hpL.BackgroundTransparency = 1
+hpL.Font = Enum.Font.Gotham; hpL.TextSize = 12; hpL.TextXAlignment = Enum.TextXAlignment.Left
+hpL.Parent = statsBox
+
+local engL = Instance.new("TextLabel"); engL.Size = UDim2.new(0.5,0,0,25)
+engL.Position = UDim2.new(0,200,0,85); engL.Text = "⭐ Energy: ? / ?"
+engL.TextColor3 = Color3.fromRGB(100,200,100); engL.BackgroundTransparency = 1
+engL.Font = Enum.Font.Gotham; engL.TextSize = 12; engL.TextXAlignment = Enum.TextXAlignment.Left
+engL.Parent = statsBox
+
+local leviBox = addStatBox(infoTab, 140)
+local leviStatus = Instance.new("TextLabel"); leviStatus.Size = UDim2.new(1,-20,0,25)
+leviStatus.Position = UDim2.new(0,15,0,10); leviStatus.Text = "🔍 Leviathan: Đang kiểm tra..."
+leviStatus.TextColor3 = Color3.fromRGB(220,220,220); leviStatus.BackgroundTransparency = 1
+leviStatus.Font = Enum.Font.Gotham; leviStatus.TextSize = 12; leviStatus.TextXAlignment = Enum.TextXAlignment.Left
+leviStatus.Parent = leviBox
+
+local chipStatus = Instance.new("TextLabel"); chipStatus.Size = UDim2.new(1,-20,0,25)
+chipStatus.Position = UDim2.new(0,15,0,35); chipStatus.Text = "💳 Chip: Chưa có"
+chipStatus.TextColor3 = Color3.fromRGB(220,220,220); chipStatus.BackgroundTransparency = 1
+chipStatus.Font = Enum.Font.Gotham; chipStatus.TextSize = 12; chipStatus.TextXAlignment = Enum.TextXAlignment.Left
+chipStatus.Parent = leviBox
+
+-- Các nút trong tab Combat (đơn giản hóa để gọn)
+local combatScroll = Instance.new("ScrollingFrame"); combatScroll.Size = UDim2.new(1,0,1,0)
+combatScroll.BackgroundTransparency = 1; combatScroll.CanvasSize = UDim2.new(0,0,0,400)
+combatScroll.ScrollBarThickness = 4; combatScroll.Parent = combatTab
+local layout = Instance.new("UIListLayout"); layout.Padding = UDim.new(0,10); layout.Parent = combatScroll
+local function addCombatBtn(text, cb)
+    local btn = Instance.new("TextButton"); btn.Size = UDim2.new(1,-20,0,40)
+    btn.Text = text; btn.BackgroundColor3 = Color3.fromRGB(50,50,60); btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.GothamBold; btn.TextSize = 13; btn.BorderSizePixel = 0; btn.Parent = combatScroll
+    local btnCorner = Instance.new("UICorner"); btnCorner.CornerRadius = UDim.new(0,6); btnCorner.Parent = btn
+    btn.MouseButton1Click:Connect(cb)
+end
+addCombatBtn("🚤 Tìm & Teleport đến Leviathan", teleportToLevi)
+addCombatBtn("🏠 Về điểm treo (Đảo Tiki)", function()
+    local hrp = character and character:FindFirstChild("HumanoidRootPart")
+    if hrp then hrp.CFrame = settings.hangoutPos; Notify("Teleport","Đã về đảo Tiki",1) end
+end)
+addCombatBtn("🍎 Tấn công bằng M1 (Trái cây)", attackM1)
+addCombatBtn("✨ Tấn công bằng Skill (Z X C V F)", attackSkill)
+addCombatBtn("🔫 Tấn công bằng Dual Flintlock", attackGun)
+addCombatBtn("🎯 Bắt đầu săn (Tự động tìm & bắn tim)", function()
+    if not settings.boatName then Notify("Lỗi","Hãy chọn thuyền trong Cài Đặt",2) return end
+    mission_FindAndShoot()
+end)
+addCombatBtn("🛑 Dừng tất cả nhiệm vụ", stopMission)
+
+-- Tab cài đặt - chọn thuyền, tốc độ, lối đánh
+local setScroll = Instance.new("ScrollingFrame"); setScroll.Size = UDim2.new(1,0,1,0)
+setScroll.BackgroundTransparency = 1; setScroll.CanvasSize = UDim2.new(0,0,0,350)
+setScroll.ScrollBarThickness = 4; setScroll.Parent = settingTab
+local setLayout = Instance.new("UIListLayout"); setLayout.Padding = UDim.new(0,10); setLayout.Parent = setScroll
+local function addSetBtn(text, cb)
+    local btn = Instance.new("TextButton"); btn.Size = UDim2.new(1,-20,0,40)
+    btn.Text = text; btn.BackgroundColor3 = Color3.fromRGB(50,50,60); btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.GothamBold; btn.TextSize = 13; btn.BorderSizePixel = 0; btn.Parent = setScroll
+    local btnCorner = Instance.new("UICorner"); btnCorner.CornerRadius = UDim.new(0,6); btnCorner.Parent = btn
+    btn.MouseButton1Click:Connect(cb)
+end
+addSetBtn("🚀 Chọn thuyền: Thợ săn thủy quái", function() settings.boatName = "Thợ săn thủy quái"; Notify("Cài đặt","Đã chọn thuyền săn",1) end)
+addSetBtn("🛡️ Chọn thuyền: Người giám hộ", function() settings.boatName = "Người giám hộ"; Notify("Cài đặt","Đã chọn thuyền hộ",1) end)
+addSetBtn("🐢 Tốc độ thuyền: CHẬM (Kéo tim)", function() boatSpeed = 30; Notify("Cài đặt","Tốc độ CHẬM",1) end)
+addSetBtn("⚡ Tốc độ thuyền: NHANH (Tìm kiếm)", function() boatSpeed = 100; Notify("Cài đặt","Tốc độ NHANH",1) end)
+addSetBtn("🍎 Lối đánh: M1 Fruit", function() attackMode = "M1"; Notify("Cài đặt","Đã chọn M1",1) end)
+addSetBtn("✨ Lối đánh: Skill", function() attackMode = "Skill"; Notify("Cài đặt","Đã chọn Skill",1) end)
+addSetBtn("🔫 Lối đánh: Dual Flintlock", function() attackMode = "Gun"; Notify("Cài đặt","Đã chọn Súng",1) end)
+
+-- Tab cửa hàng
+local shopScroll = Instance.new("ScrollingFrame"); shopScroll.Size = UDim2.new(1,0,1,0)
+shopScroll.BackgroundTransparency = 1; shopScroll.CanvasSize = UDim2.new(0,0,0,200)
+shopScroll.ScrollBarThickness = 4; shopScroll.Parent = shopTab
+local shopLayout = Instance.new("UIListLayout"); shopLayout.Padding = UDim.new(0,10); shopLayout.Parent = shopScroll
+local function addShopBtn(text, cb)
+    local btn = Instance.new("TextButton"); btn.Size = UDim2.new(1,-20,0,45)
+    btn.Text = text; btn.BackgroundColor3 = Color3.fromRGB(50,50,60); btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.GothamBold; btn.TextSize = 14; btn.BorderSizePixel = 0; btn.Parent = shopScroll
+    local btnCorner = Instance.new("UICorner"); btnCorner.CornerRadius = UDim.new(0,6); btnCorner.Parent = btn
+    btn.MouseButton1Click:Connect(cb)
+end
+addShopBtn("🛒 Mua Leviathan Chip", buyChip)
+addShopBtn("🛥️ Mua thuyền 'Thợ săn thủy quái'", function() buyBoat("Thợ săn thủy quái") end)
+addShopBtn("⚔️ Mua thuyền 'Người giám hộ'", function() buyBoat("Người giám hộ") end)
+
+-- Vòng lặp cập nhật thông tin
+task.spawn(function()
+    while true do
+        task.wait(2)
+        pcall(function()
+            character = player.Character
+            local lv, exp, req, money, hp, maxHp, eng, maxEng = fetchStats()
+            levelL.Text = "Lv. " .. lv
+            expL.Text = "EXP: " .. exp .. " / " .. req
+            moneyL.Text = "$" .. money
+            hpL.Text = "❤️ Health: " .. hp .. " / " .. maxHp
+            engL.Text = "⭐ Energy: " .. eng .. " / " .. maxEng
+            updateLevi()
+            checkChip()
+            if leviInfo.active then
+                leviStatus.Text = "🔴 Leviathan: ĐANG XUẤT HIỆN (Máu: " .. leviInfo.health .. ")"
+                leviStatus.TextColor3 = Color3.fromRGB(255,100,100)
+            else
+                leviStatus.Text = "🟢 Leviathan: Chưa xuất hiện"
+                leviStatus.TextColor3 = Color3.fromRGB(100,255,100)
+            end
+            chipStatus.Text = leviInfo.hasChip and "💳 Chip: Đã có" or "💳 Chip: Chưa có"
+            chipStatus.TextColor3 = leviInfo.hasChip and Color3.fromRGB(100,255,100) or Color3.fromRGB(255,100,100)
+        end)
+    end
+end)
+
+Notify("HDZ LEVIATHAN by hoang","✅ Đã tải thành công! Giao diện tab đầy đủ.",5)
+-- ===== HẾT PHẦN 7/7 =====
