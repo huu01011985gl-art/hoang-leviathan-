@@ -1,0 +1,429 @@
+-- ============================================
+-- LEVIATHAN HUNTER SCRIPT - BẢN FULL MENU
+-- Tự động tìm và tiêu diệt Leviathan trong Blox Fruits
+-- KHÔNG cần thư viện UI, hoạt động độc lập
+-- ============================================
+
+-- Tạo ScreenGui
+local gui = Instance.new("ScreenGui")
+gui.Name = "LeviHunterGUI"
+gui.ResetOnSpawn = false
+gui.Parent = game:GetService("CoreGui")
+
+-- Biến toàn cục
+local isHunting = false
+local huntThread = nil
+local settings = {
+    skillKeys = {"Z", "X", "C", "V", "F"},
+    teleportDelay = 0.3,
+    hangoutPos = CFrame.new(5000, 400, -1500)
+}
+
+-- ========== HÀM XỬ LÝ CHÍNH ==========
+
+local function isAlive(char)
+    if not char then return false end
+    local hum = char:FindFirstChild("Humanoid")
+    return hum and hum.Health > 0
+end
+
+local function findLeviathan()
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name and string.lower(obj.Name):find("leviathan") then
+            local hrp = obj:FindFirstChild("HumanoidRootPart")
+            local hum = obj:FindFirstChild("Humanoid")
+            if hrp and hum and hum.Health > 0 then
+                return obj, hrp
+            end
+        end
+    end
+    return nil, nil
+end
+
+local function pressKey(key)
+    local vim = game:GetService("VirtualInputManager")
+    pcall(function()
+        vim:SendKeyEvent(true, key, false, game)
+        task.wait(0.05)
+        vim:SendKeyEvent(false, key, false, game)
+    end)
+end
+
+local function stopHunting()
+    if huntThread then
+        task.cancel(huntThread)
+        huntThread = nil
+    end
+    local player = game.Players.LocalPlayer
+    if player and player.Character then
+        local fly = player.Character:FindFirstChild("LeviFly")
+        if fly then fly:Destroy() end
+    end
+end
+
+local function startHunting()
+    if huntThread then stopHunting() end
+    
+    huntThread = task.spawn(function()
+        local player = game.Players.LocalPlayer
+        
+        -- Chờ nhân vật xuất hiện
+        repeat
+            task.wait(0.5)
+            if not isHunting then return end
+        until player.Character and player.Character:FindFirstChild("HumanoidRootPart") and isAlive(player.Character)
+        
+        local hrp = player.Character.HumanoidRootPart
+        
+        -- Tạo BodyVelocity để bay
+        local bodyVel = Instance.new("BodyVelocity")
+        bodyVel.Name = "LeviFly"
+        bodyVel.Velocity = Vector3.new(0, 0, 0)
+        bodyVel.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+        bodyVel.Parent = hrp
+        
+        local lastTele = 0
+        
+        while isHunting do
+            -- Kiểm tra nhân vật
+            if not player.Character or not hrp.Parent then
+                repeat
+                    task.wait(1)
+                    if not isHunting then return end
+                until player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+                hrp = player.Character.HumanoidRootPart
+                bodyVel.Parent = hrp
+            end
+            
+            if not isAlive(player.Character) then
+                task.wait(3)
+                repeat
+                    task.wait(1)
+                    if not isHunting then return end
+                until player.Character and isAlive(player.Character)
+                hrp = player.Character.HumanoidRootPart
+                bodyVel.Parent = hrp
+            end
+            
+            -- Tìm Leviathan
+            local levi, leviHrp = findLeviathan()
+            
+            if levi and leviHrp then
+                local dist = (leviHrp.Position - hrp.Position).Magnitude
+                
+                -- Tiến đến gần Leviathan
+                if dist > 80 then
+                    if tick() - lastTele > settings.teleportDelay + 0.2 then
+                        hrp.CFrame = leviHrp.CFrame * CFrame.new(0, 35, -25)
+                        lastTele = tick()
+                    end
+                elseif dist > 20 then
+                    if tick() - lastTele > settings.teleportDelay then
+                        hrp.CFrame = leviHrp.CFrame * CFrame.new(0, 30, -10)
+                        lastTele = tick()
+                    end
+                else
+                    -- Trong tầm đánh: spam skill
+                    for _, key in pairs(settings.skillKeys) do
+                        if not isHunting then break end
+                        pressKey(key)
+                        task.wait(0.12)
+                    end
+                    
+                    -- Đánh thường
+                    local tool = player.Character:FindFirstChildOfClass("Tool")
+                    if tool then
+                        pcall(function() tool:Activate() end)
+                        pcall(function()
+                            game:GetService("VirtualUser"):Button1Down(Vector2.new(0,0))
+                            task.wait(0.1)
+                            game:GetService("VirtualUser"):Button1Up(Vector2.new(0,0))
+                        end)
+                    end
+                end
+            else
+                -- Không có Levi: về điểm treo
+                if tick() - lastTele > 2 then
+                    hrp.CFrame = settings.hangoutPos
+                    lastTele = tick()
+                end
+            end
+            
+            task.wait(0.8)
+        end
+        
+        pcall(function() if bodyVel and bodyVel.Parent then bodyVel:Destroy() end end)
+    end)
+end
+
+-- ========== TẠO MENU UI ==========
+
+-- Main Frame (có thể kéo thả)
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 360, 0, 480)
+mainFrame.Position = UDim2.new(0.5, -180, 0.5, -240)
+mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+mainFrame.BackgroundTransparency = 0.08
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = gui
+
+-- Bo góc
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 8)
+corner.Parent = mainFrame
+
+-- Tiêu đề
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 40)
+titleBar.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainFrame
+
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 8)
+titleCorner.Parent = titleBar
+
+local titleText = Instance.new("TextLabel")
+titleText.Size = UDim2.new(1, -50, 1, 0)
+titleText.Position = UDim2.new(0, 15, 0, 0)
+titleText.Text = "⚡ LEVIATHAN HUNTER ⚡"
+titleText.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleText.BackgroundTransparency = 1
+titleText.Font = Enum.Font.GothamBold
+titleText.TextSize = 16
+titleText.TextXAlignment = Enum.TextXAlignment.Left
+titleText.Parent = titleBar
+
+-- Nút đóng
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 30, 0, 30)
+closeBtn.Position = UDim2.new(1, -40, 0, 5)
+closeBtn.Text = "✕"
+closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextSize = 14
+closeBtn.BorderSizePixel = 0
+closeBtn.Parent = titleBar
+
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0, 4)
+closeCorner.Parent = closeBtn
+
+closeBtn.MouseButton1Click:Connect(function()
+    if isHunting then
+        isHunting = false
+        stopHunting()
+    end
+    gui:Destroy()
+end)
+
+-- Scrolling Frame cho nội dung
+local scrollFrame = Instance.new("ScrollingFrame")
+scrollFrame.Size = UDim2.new(1, -20, 1, -60)
+scrollFrame.Position = UDim2.new(0, 10, 0, 50)
+scrollFrame.BackgroundTransparency = 1
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+scrollFrame.ScrollBarThickness = 4
+scrollFrame.Parent = mainFrame
+
+local listLayout = Instance.new("UIListLayout")
+listLayout.Padding = UDim.new(0, 12)
+listLayout.Parent = scrollFrame
+
+-- ========== KHU VỰC NỘI DUNG ==========
+local currentY = 0
+
+-- Section 1: Điều khiển chính
+local controlSection = Instance.new("Frame")
+controlSection.Size = UDim2.new(1, 0, 0, 100)
+controlSection.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+controlSection.BackgroundTransparency = 0.3
+controlSection.BorderSizePixel = 0
+controlSection.Parent = scrollFrame
+
+local secCorner = Instance.new("UICorner")
+secCorner.CornerRadius = UDim.new(0, 6)
+secCorner.Parent = controlSection
+
+local secTitle = Instance.new("TextLabel")
+secTitle.Size = UDim2.new(1, -20, 0, 25)
+secTitle.Position = UDim2.new(0, 10, 0, 5)
+secTitle.Text = "🎮 ĐIỀU KHIỂN"
+secTitle.TextColor3 = Color3.fromRGB(255, 200, 100)
+secTitle.BackgroundTransparency = 1
+secTitle.Font = Enum.Font.GothamBold
+secTitle.TextSize = 13
+secTitle.TextXAlignment = Enum.TextXAlignment.Left
+secTitle.Parent = controlSection
+
+-- Nút Bật/Tắt
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Size = UDim2.new(0, 200, 0, 45)
+toggleBtn.Position = UDim2.new(0.5, -100, 0, 40)
+toggleBtn.Text = "🔴 TRẠNG THÁI: TẮT 🔴"
+toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+toggleBtn.Font = Enum.Font.GothamBold
+toggleBtn.TextSize = 14
+toggleBtn.BorderSizePixel = 0
+toggleBtn.Parent = controlSection
+
+local btnCorner = Instance.new("UICorner")
+btnCorner.CornerRadius = UDim.new(0, 6)
+btnCorner.Parent = toggleBtn
+
+toggleBtn.MouseButton1Click:Connect(function()
+    isHunting = not isHunting
+    
+    if isHunting then
+        toggleBtn.Text = "🟢 TRẠNG THÁI: ĐANG SĂN 🟢"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(60, 180, 60)
+        startHunting()
+        statusLabel.Text = "🚀 Đang săn Leviathan..."
+        statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+    else
+        toggleBtn.Text = "🔴 TRẠNG THÁI: TẮT 🔴"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+        stopHunting()
+        statusLabel.Text = "⏹️ Đã dừng"
+        statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    end
+end)
+
+-- Status label
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(1, -20, 0, 25)
+statusLabel.Position = UDim2.new(0, 10, 1, -30)
+statusLabel.Text = "⏹️ Đã dừng"
+statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Font = Enum.Font.Gotham
+statusLabel.TextSize = 12
+statusLabel.Parent = mainFrame
+
+-- Section 2: Thông tin
+local infoSection = Instance.new("Frame")
+infoSection.Size = UDim2.new(1, 0, 0, 120)
+infoSection.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+infoSection.BackgroundTransparency = 0.3
+infoSection.BorderSizePixel = 0
+infoSection.Parent = scrollFrame
+
+local infoCorner = Instance.new("UICorner")
+infoCorner.CornerRadius = UDim.new(0, 6)
+infoCorner.Parent = infoSection
+
+local infoTitle = Instance.new("TextLabel")
+infoTitle.Size = UDim2.new(1, -20, 0, 25)
+infoTitle.Position = UDim2.new(0, 10, 0, 5)
+infoTitle.Text = "📌 THÔNG TIN"
+infoTitle.TextColor3 = Color3.fromRGB(100, 200, 255)
+infoTitle.BackgroundTransparency = 1
+infoTitle.Font = Enum.Font.GothamBold
+infoTitle.TextSize = 13
+infoTitle.TextXAlignment = Enum.TextXAlignment.Left
+infoTitle.Parent = infoSection
+
+local infoLines = {
+    "✅ Tự động tìm và tấn công Leviathan",
+    "⚔️ Spam skill: Z, X, C, V, F",
+    "📍 Có thể tùy chỉnh vị trí treo",
+    "💪 Hoạt động ổn định, không cần thư viện"
+}
+
+for i, line in ipairs(infoLines) do
+    local lineLabel = Instance.new("TextLabel")
+    lineLabel.Size = UDim2.new(1, -20, 0, 22)
+    lineLabel.Position = UDim2.new(0, 15, 0, 35 + (i-1)*25)
+    lineLabel.Text = line
+    lineLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+    lineLabel.BackgroundTransparency = 1
+    lineLabel.Font = Enum.Font.Gotham
+    lineLabel.TextSize = 11
+    lineLabel.TextXAlignment = Enum.TextXAlignment.Left
+    lineLabel.Parent = infoSection
+end
+
+-- Section 3: Cài đặt
+local settingSection = Instance.new("Frame")
+settingSection.Size = UDim2.new(1, 0, 0, 150)
+settingSection.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+settingSection.BackgroundTransparency = 0.3
+settingSection.BorderSizePixel = 0
+settingSection.Parent = scrollFrame
+
+local setCorner = Instance.new("UICorner")
+setCorner.CornerRadius = UDim.new(0, 6)
+setCorner.Parent = settingSection
+
+local setTitle = Instance.new("TextLabel")
+setTitle.Size = UDim2.new(1, -20, 0, 25)
+setTitle.Position = UDim2.new(0, 10, 0, 5)
+setTitle.Text = "⚙️ CÀI ĐẶT"
+setTitle.TextColor3 = Color3.fromRGB(200, 200, 100)
+setTitle.BackgroundTransparency = 1
+setTitle.Font = Enum.Font.GothamBold
+setTitle.TextSize = 13
+setTitle.TextXAlignment = Enum.TextXAlignment.Left
+setTitle.Parent = settingSection
+
+-- Delay setting (thanh trượt đơn giản)
+local delayLabel = Instance.new("TextLabel")
+delayLabel.Size = UDim2.new(0.5, -10, 0, 25)
+delayLabel.Position = UDim2.new(0, 10, 0, 40)
+delayLabel.Text = "Delay teleport: 0.3s"
+delayLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+delayLabel.BackgroundTransparency = 1
+delayLabel.Font = Enum.Font.Gotham
+delayLabel.TextSize = 12
+delayLabel.TextXAlignment = Enum.TextXAlignment.Left
+delayLabel.Parent = settingSection
+
+local delaySlider = Instance.new("TextButton")
+delaySlider.Size = UDim2.new(0.4, -10, 0, 25)
+delaySlider.Position = UDim2.new(0.5, 10, 0, 40)
+delaySlider.Text = "▲ 0.3 ▼"
+delaySlider.TextColor3 = Color3.fromRGB(255, 255, 255)
+delaySlider.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+delaySlider.Font = Enum.Font.GothamBold
+delaySlider.TextSize = 11
+delaySlider.BorderSizePixel = 0
+delaySlider.Parent = settingSection
+
+local sliderCorner = Instance.new("UICorner")
+sliderCorner.CornerRadius = UDim.new(0, 4)
+sliderCorner.Parent = delaySlider
+
+local delayValues = {0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0}
+local delayIndex = 3
+
+delaySlider.MouseButton1Click:Connect(function()
+    delayIndex = delayIndex % #delayValues + 1
+    settings.teleportDelay = delayValues[delayIndex]
+    delaySlider.Text = "▲ " .. settings.teleportDelay .. " ▼"
+    delayLabel.Text = "Delay teleport: " .. settings.teleportDelay .. "s"
+end)
+
+-- Thông báo khởi tạo thành công
+game:GetService("StarterGui"):SetCore("SendNotification", {
+    Title = "Leviathan Hunter",
+    Text = "Đã tải thành công! Nhấn nút đỏ để bắt đầu.",
+    Duration = 4
+})
+
+-- Cập nhật CanvasSize
+local function updateCanvas()
+    local totalHeight = 0
+    for _, child in pairs(scrollFrame:GetChildren()) do
+        if child:IsA("Frame") and child ~= listLayout then
+            totalHeight = totalHeight + child.Size.Y.Offset + 12
+        end
+    end
+    scrollFrame.CanvasSize = UDim2.new(0, 0, 0, totalHeight + 20)
+end
+
+task.wait(0.1)
+updateCanvas()
