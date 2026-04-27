@@ -1,0 +1,241 @@
+-- ===== THƯ VIỆN UI ĐƠN GIẢN =====
+local CustomUI = {}
+CustomUI.Windows = {}
+CustomUI.CurrentWindow = nil
+
+-- Tạo cửa sổ chính
+function CustomUI:CreateLib(title, theme)
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "CustomUI"
+    ScreenGui.Parent = game:GetService("CoreGui")
+    
+    local MainFrame = Instance.new("Frame")
+    MainFrame.Size = UDim2.new(0, 500, 0, 400)
+    MainFrame.Position = UDim2.new(0.5, -250, 0.5, -200)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+    MainFrame.BackgroundTransparency = 0.1
+    MainFrame.BorderSizePixel = 0
+    MainFrame.ClipsDescendants = true
+    MainFrame.Parent = MainFrame
+    
+    -- Hiệu ứng kéo thả
+    local dragging = false
+    local dragStart = nil
+    local startPos = nil
+    
+    MainFrame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = MainFrame.Position
+        end
+    end)
+    
+    MainFrame.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    
+    game:GetService("UserInputService").InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = input.Position - dragStart
+            MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+    
+    -- Tiêu đề
+    local TitleBar = Instance.new("Frame")
+    TitleBar.Size = UDim2.new(1, 0, 0, 30)
+    TitleBar.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+    TitleBar.BorderSizePixel = 0
+    TitleBar.Parent = MainFrame
+    
+    local TitleText = Instance.new("TextLabel")
+    TitleText.Size = UDim2.new(1, -30, 1, 0)
+    TitleText.Position = UDim2.new(0, 10, 0, 0)
+    TitleText.Text = title
+    TitleText.TextColor3 = Color3.fromRGB(255, 255, 255)
+    TitleText.TextXAlignment = Enum.TextXAlignment.Left
+    TitleText.BackgroundTransparency = 1
+    TitleText.Font = Enum.Font.GothamBold
+    TitleText.TextSize = 14
+    TitleText.Parent = TitleBar
+    
+    -- Nút đóng
+    local CloseBtn = Instance.new("TextButton")
+    CloseBtn.Size = UDim2.new(0, 30, 1, 0)
+    CloseBtn.Position = UDim2.new(1, -30, 0, 0)
+    CloseBtn.Text = "X"
+    CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    CloseBtn.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+    CloseBtn.BorderSizePixel = 0
+    CloseBtn.Font = Enum.Font.GothamBold
+    CloseBtn.TextSize = 14
+    CloseBtn.Parent = TitleBar
+    CloseBtn.MouseButton1Click:Connect(function()
+        MainFrame.Visible = false
+    end)
+    
+    -- Tab container
+    local TabContainer = Instance.new("Frame")
+    TabContainer.Size = UDim2.new(1, 0, 0, 35)
+    TabContainer.Position = UDim2.new(0, 0, 0, 30)
+    TabContainer.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+    TabContainer.BackgroundTransparency = 0.5
+    TabContainer.BorderSizePixel = 0
+    TabContainer.Parent = MainFrame
+    
+    local TabButtonContainer = Instance.new("Frame")
+    TabButtonContainer.Size = UDim2.new(1, 0, 0, 35)
+    TabButtonContainer.BackgroundTransparency = 1
+    TabButtonContainer.Parent = TabContainer
+    
+    local ContentFrame = Instance.new("Frame")
+    ContentFrame.Size = UDim2.new(1, 0, 1, -65)
+    ContentFrame.Position = UDim2.new(0, 0, 0, 65)
+    ContentFrame.BackgroundTransparency = 1
+    ContentFrame.Parent = MainFrame
+    
+    return {
+        NewTab = function(self, tabName)
+            local TabFrame = Instance.new("ScrollingFrame")
+            TabFrame.Size = UDim2.new(1, 0, 1, 0)
+            TabFrame.BackgroundTransparency = 1
+            TabFrame.Visible = false
+            TabFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+            TabFrame.ScrollBarThickness = 6
+            TabFrame.Parent = ContentFrame
+            
+            local TabBtn = Instance.new("TextButton")
+            TabBtn.Size = UDim2.new(0, 100, 1, 0)
+            TabBtn.Text = tabName
+            TabBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+            TabBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+            TabBtn.BorderSizePixel = 0
+            TabBtn.Font = Enum.Font.Gotham
+            TabBtn.TextSize = 14
+            TabBtn.Parent = TabButtonContainer
+            
+            local layout = Instance.new("UIListLayout")
+            layout.FillDirection = Enum.FillDirection.Horizontal
+            layout.Parent = TabButtonContainer
+            
+            TabBtn.MouseButton1Click:Connect(function()
+                for _, child in pairs(ContentFrame:GetChildren()) do
+                    if child:IsA("ScrollingFrame") then
+                        child.Visible = false
+                    end
+                end
+                for _, child in pairs(TabButtonContainer:GetChildren()) do
+                    if child:IsA("TextButton") then
+                        child.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+                        child.TextColor3 = Color3.fromRGB(200, 200, 200)
+                    end
+                end
+                TabFrame.Visible = true
+                TabBtn.BackgroundColor3 = Color3.fromRGB(55, 55, 60)
+                TabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            end)
+            
+            if not CustomUI.CurrentWindow then
+                TabBtn.MouseButton1Click:Fire()
+            end
+            
+            return {
+                NewSection = function(self, sectionName)
+                    local SectionFrame = Instance.new("Frame")
+                    SectionFrame.Size = UDim2.new(1, -20, 0, 50)
+                    SectionFrame.Position = UDim2.new(0, 10, 0, 10)
+                    SectionFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+                    SectionFrame.BorderSizePixel = 0
+                    SectionFrame.Parent = TabFrame
+                    
+                    local SectionTitle = Instance.new("TextLabel")
+                    SectionTitle.Size = UDim2.new(1, 0, 0, 25)
+                    SectionTitle.Text = sectionName
+                    SectionTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+                    SectionTitle.BackgroundTransparency = 1
+                    SectionTitle.Font = Enum.Font.GothamBold
+                    SectionTitle.TextSize = 12
+                    SectionTitle.TextXAlignment = Enum.TextXAlignment.Left
+                    SectionTitle.Parent = SectionFrame
+                    
+                    local UIList = Instance.new("UIListLayout")
+                    UIList.Padding = UDim.new(0, 5)
+                    UIList.Parent = SectionFrame
+                    
+                    local lastY = 50
+                    
+                    return {
+                        NewToggle = function(self, text, desc, default, callback)
+                            local ToggleFrame = Instance.new("Frame")
+                            ToggleFrame.Size = UDim2.new(1, -20, 0, 30)
+                            ToggleFrame.Position = UDim2.new(0, 10, 0, lastY)
+                            ToggleFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+                            ToggleFrame.BorderSizePixel = 0
+                            ToggleFrame.Parent = TabFrame
+                            
+                            local ToggleLabel = Instance.new("TextLabel")
+                            ToggleLabel.Size = UDim2.new(1, -60, 1, 0)
+                            ToggleLabel.Position = UDim2.new(0, 10, 0, 0)
+                            ToggleLabel.Text = text
+                            ToggleLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+                            ToggleLabel.TextXAlignment = Enum.TextXAlignment.Left
+                            ToggleLabel.BackgroundTransparency = 1
+                            ToggleLabel.Font = Enum.Font.Gotham
+                            ToggleLabel.TextSize = 13
+                            ToggleLabel.Parent = ToggleFrame
+                            
+                            local ToggleBtn = Instance.new("TextButton")
+                            ToggleBtn.Size = UDim2.new(0, 40, 1, -8)
+                            ToggleBtn.Position = UDim2.new(1, -50, 0, 4)
+                            ToggleBtn.Text = default and "ON" or "OFF"
+                            ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+                            ToggleBtn.BackgroundColor3 = default and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(200, 0, 0)
+                            ToggleBtn.BorderSizePixel = 0
+                            ToggleBtn.Font = Enum.Font.GothamBold
+                            ToggleBtn.TextSize = 12
+                            ToggleBtn.Parent = ToggleFrame
+                            
+                            local state = default
+                            ToggleBtn.MouseButton1Click:Connect(function()
+                                state = not state
+                                ToggleBtn.Text = state and "ON" or "OFF"
+                                ToggleBtn.BackgroundColor3 = state and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(200, 0, 0)
+                                if callback then callback(state) end
+                            end)
+                            
+                            if callback then callback(default) end
+                            lastY = lastY + 35
+                            
+                            local sectionUIList = SectionFrame:FindFirstChildWhichIsA("UIListLayout")
+                            if sectionUIList then
+                                ToggleFrame.Parent = SectionFrame
+                            end
+                        end,
+                        
+                        NewLabel = function(self, text)
+                            local Label = Instance.new("TextLabel")
+                            Label.Size = UDim2.new(1, -20, 0, 25)
+                            Label.Position = UDim2.new(0, 10, 0, lastY)
+                            Label.Text = text
+                            Label.TextColor3 = Color3.fromRGB(180, 180, 180)
+                            Label.BackgroundTransparency = 1
+                            Label.Font = Enum.Font.Gotham
+                            Label.TextSize = 12
+                            Label.TextXAlignment = Enum.TextXAlignment.Left
+                            Label.Parent = TabFrame
+                            
+                            lastY = lastY + 30
+                            TabFrame.CanvasSize = UDim2.new(0, 0, 0, lastY + 20)
+                        end
+                    }
+                end
+            }
+        end
+    }
+end
+
+-- Gán vào biến Library để script cũ hoạt động
+Library = CustomUI
