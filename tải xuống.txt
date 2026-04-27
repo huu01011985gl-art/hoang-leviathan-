@@ -1,0 +1,236 @@
+--[[
+    Blox Fruits - Leviathan Hunter Script
+    Tính năng: Treo đảo + Tự động tìm và tấn công Leviathan
+    Sử dụng phím tắt: Z, X, C, V, F để spam skill
+--]]
+
+-- Kiểm tra và tải Kavo UI (dùng link dự phòng nếu link gốc chết)
+local kavoLoaded = false
+local kavoLinks = {
+    "https://raw.githubusercontent.com/Kavo-hub/Kavo-UI-Library/main/source.lua",
+    "https://raw.githubusercontent.com/7GrandDadPNG/Kavo-UI-Library/main/source.lua"
+}
+
+for _, link in pairs(kavoLinks) do
+    local success = pcall(function()
+        loadstring(game:HttpGet(link))()
+    end)
+    if success then
+        kavoLoaded = true
+        break
+    end
+end
+
+if not kavoLoaded then
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "HDZ Leviathan Hunter",
+        Text = "by hoang",
+        Duration = 5
+    })
+    return
+end
+
+-- Tạo UI
+local Library = Library or KavoUI
+local Window = Library.CreateLib("Blox Fruits - Levi Hunter", "Midnight")
+local Tab = Window:NewTab("Leviathan")
+local Section = Tab:NewSection("⚔️ Treo đảo + Auto Levi ⚔️")
+
+-- Biến toàn cục
+_G.TreoLevi = false
+_G.currentThread = nil
+
+-- Hàm spam skill an toàn
+local function spamSkill(key)
+    local vim = game:GetService("VirtualInputManager")
+    pcall(function()
+        vim:SendKeyEvent(true, key, false, game)
+        task.wait(0.05)
+        vim:SendKeyEvent(false, key, false, game)
+    end)
+end
+
+-- Hàm kiểm tra nhân vật còn sống không
+local function isCharacterAlive(char)
+    if not char then return false end
+    local humanoid = char:FindFirstChild("Humanoid")
+    return humanoid and humanoid.Health > 0
+end
+
+-- Hàm tìm Leviathan trong map
+local function findLeviathan()
+    for _, v in pairs(workspace:GetDescendants()) do
+        if v:IsA("Model") and v.Name and string.lower(v.Name):find("leviathan") then
+            local hrp = v:FindFirstChild("HumanoidRootPart")
+            local humanoid = v:FindFirstChild("Humanoid")
+            if hrp and humanoid and humanoid.Health > 0 then
+                return v, hrp
+            end
+        end
+    end
+    return nil, nil
+end
+
+-- Hàm chính để treo đảo và auto Levi
+local function startLeviHunter()
+    if _G.currentThread then
+        task.cancel(_G.currentThread)
+        _G.currentThread = nil
+    end
+    
+    _G.currentThread = task.spawn(function()
+        -- Chờ nhân vật xuất hiện
+        local plr = game.Players.LocalPlayer
+        repeat
+            task.wait(0.5)
+            if not _G.TreoLevi then return end
+        until plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") and isCharacterAlive(plr.Character)
+        
+        local hrp = plr.Character.HumanoidRootPart
+        
+        -- Tạo hiệu ứng bay
+        local bv = Instance.new("BodyVelocity")
+        bv.Name = "LeviFly"
+        bv.Velocity = Vector3.new(0, 0, 0)
+        bv.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+        bv.Parent = hrp
+        
+        -- Vị trí treo đảo mặc định (tùy chỉnh theo ý bạn)
+        local hangoutPosition = CFrame.new(5000, 400, -1500)
+        
+        -- Biến để tránh spam dịch chuyển
+        local lastTeleport = 0
+        
+        while _G.TreoLevi do
+            -- Kiểm tra nhân vật còn tồn tại không
+            if not plr.Character or not hrp.Parent then
+                -- Chờ respawn
+                repeat
+                    task.wait(1)
+                    if not _G.TreoLevi then return end
+                until plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+                hrp = plr.Character.HumanoidRootPart
+                bv.Parent = hrp
+            end
+            
+            -- Kiểm tra còn sống không
+            if not isCharacterAlive(plr.Character) then
+                task.wait(3)
+                repeat
+                    task.wait(1)
+                    if not _G.TreoLevi then return end
+                until plr.Character and isCharacterAlive(plr.Character)
+                hrp = plr.Character.HumanoidRootPart
+                bv.Parent = hrp
+                goto continue
+            end
+            
+            -- Tìm Leviathan
+            local levi, leviHrp = findLeviathan()
+            
+            if levi and leviHrp then
+                local dist = (leviHrp.Position - hrp.Position).Magnitude
+                
+                if dist > 80 then
+                    -- Bay đến gần Levi (có giới hạn thời gian để tránh lag)
+                    if tick() - lastTeleport > 0.5 then
+                        hrp.CFrame = leviHrp.CFrame * CFrame.new(0, 35, -25)
+                        lastTeleport = tick()
+                    end
+                elseif dist > 20 then
+                    -- Tiến lại gần hơn
+                    if tick() - lastTeleport > 0.3 then
+                        hrp.CFrame = leviHrp.CFrame * CFrame.new(0, 30, -10)
+                        lastTeleport = tick()
+                    end
+                else
+                    -- Ở trong tầm đánh: spam skill
+                    -- Tự động trang bị vũ khí/trái ác quỷ
+                    local tool = plr.Character:FindFirstChildOfClass("Tool")
+                    if tool then
+                        pcall(function() tool:Activate() end)
+                    end
+                    
+                    -- Spam các phím skill
+                    local skillKeys = {"Z", "X", "C", "V", "F"}
+                    for _, key in pairs(skillKeys) do
+                        if not _G.TreoLevi then break end
+                        spamSkill(key)
+                        task.wait(0.15)
+                    end
+                    
+                    -- Đánh thường (nếu có tool)
+                    if tool then
+                        pcall(function()
+                            game:GetService("VirtualUser"):Button1Down(Vector2.new(0, 0))
+                            task.wait(0.1)
+                            game:GetService("VirtualUser"):Button1Up(Vector2.new(0, 0))
+                        end)
+                    end
+                end
+            else
+                -- Không thấy Leviathan : bay treo tại điểm đã định
+                if tick() - lastTeleport > 2 then
+                    hrp.CFrame = hangoutPosition
+                    lastTeleport = tick()
+                end
+            end
+            
+            ::continue::
+            task.wait(0.8)
+        end
+        
+        -- Dọn dẹp khi thoát
+        pcall(function()
+            if bv and bv.Parent then
+                bv:Destroy()
+            end
+        end)
+    end)
+end
+
+-- Tạo toggle trong UI
+Section:NewToggle("🔥 Bật Treo Đảo + Auto Levi 🔥", "Tự động bay, tìm và tiêu diệt Leviathan", false, function(state)
+    _G.TreoLevi = state
+    
+    if state then
+        -- Gửi thông báo
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "Leviathan Hunter",
+            Text = "Đã bật chế độ săn Leviathan!",
+            Duration = 3
+        })
+        startLeviHunter()
+    else
+        -- Hủy thread hiện tại
+        if _G.currentThread then
+            task.cancel(_G.currentThread)
+            _G.currentThread = nil
+        end
+        -- Xóa hiệu ứng bay
+        local plr = game.Players.LocalPlayer
+        if plr and plr.Character then
+            local bv = plr.Character:FindFirstChild("LeviFly")
+            if bv then bv:Destroy() end
+        end
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "Leviathan Hunter",
+            Text = "Đã tắt chế độ săn Leviathan!",
+            Duration = 2
+        })
+    end
+end)
+
+-- Thêm thông tin
+local InfoSection = Tab:NewSection("📝 Thông tin")
+InfoSection:NewLabel("⚡ Script hoạt động tốt với Blox Fruits")
+InfoSection:NewLabel("🎯 Tự động tìm Leviathan trong map")
+InfoSection:NewLabel("💪 Spam skill Z, X, C, V, F")
+InfoSection:NewLabel("📍 Có thể tùy chỉnh vị trí treo đảo trong code")
+
+-- Thông báo khởi tạo thành công
+game:GetService("StarterGui"):SetCore("SendNotification", {
+    Title = "HDZ Leviathan Hunter",
+    Text = "by hoang",
+    Duration = 4
+})
